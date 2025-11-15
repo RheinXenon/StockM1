@@ -25,6 +25,13 @@ from visualization.charts import (
     create_rsi_chart, create_kdj_chart, create_bollinger_chart,
     create_combined_chart, create_comparison_chart, create_returns_chart
 )
+from visualization.agent_data_loader import AgentDataLoader
+from visualization.agent_charts import (
+    create_portfolio_value_chart, create_return_rate_chart,
+    create_cash_position_chart, create_combined_overview_chart,
+    create_transactions_timeline, create_holdings_pie_chart,
+    create_daily_return_distribution
+)
 from src.stock_app.data_downloader import DataDownloader
 from src.stock_app.database import Database
 import time
@@ -105,7 +112,7 @@ def main():
     st.sidebar.title("导航菜单")
     page = st.sidebar.radio(
         "选择页面",
-        ["📊 股票列表", "📈 股票详细分析", "🔍 多股票对比", "📉 技术指标分析", "📊 统计分析", "⬇️ 下载股票数据"]
+        ["📊 股票列表", "📈 股票详细分析", "🔍 多股票对比", "📉 技术指标分析", "📊 统计分析", "🤖 AI Agent交易结果", "⬇️ 下载股票数据"]
     )
     
     # 根据选择显示不同页面
@@ -119,6 +126,8 @@ def main():
         show_indicators_page()
     elif page == "📊 统计分析":
         show_statistics_page()
+    elif page == "🤖 AI Agent交易结果":
+        show_ai_agent_page()
     elif page == "⬇️ 下载股票数据":
         show_download_page()
 
@@ -1061,6 +1070,272 @@ def download_batch_by_range(downloader, db, start_date, end_date, interval, star
     except Exception as e:
         status_text.empty()
         st.error(f"❌ 范围下载失败: {str(e)}")
+
+
+def show_ai_agent_page():
+    """显示AI Agent交易结果页面"""
+    st.header("🤖 AI Agent交易结果分析")
+    
+    st.info("💡 展示AI Agents的炒股操作结果，包括资产曲线、收益率变化和每日交易操作。")
+    
+    # 初始化数据加载器
+    @st.cache_resource
+    def get_agent_loader():
+        return AgentDataLoader()
+    
+    agent_loader = get_agent_loader()
+    
+    # 获取可用的日志文件
+    available_logs = agent_loader.get_available_logs()
+    
+    if not available_logs:
+        st.warning("⚠️ 暂无AI Agent交易日志数据")
+        st.info("请先运行AI Agent进行交易模拟，日志文件将保存在 `Agents_Experience/logs` 目录中。")
+        return
+    
+    # 选择日志文件
+    st.subheader("📂 选择交易日志")
+    
+    log_options = {log['display_name']: log for log in available_logs}
+    selected_log_name = st.selectbox(
+        "选择Agent和时间",
+        options=list(log_options.keys())
+    )
+    
+    selected_log = log_options[selected_log_name]
+    
+    # 加载数据
+    with st.spinner('加载交易数据中...'):
+        portfolio_df = agent_loader.load_portfolio_data(selected_log['portfolio_file'])
+        transactions_df = agent_loader.load_daily_transactions(selected_log['portfolio_file'])
+        statistics = agent_loader.get_portfolio_statistics(selected_log['portfolio_file'])
+    
+    if portfolio_df.empty:
+        st.error("❌ 无法加载投资组合数据")
+        return
+    
+    st.divider()
+    
+    # 显示统计概览
+    st.subheader("📊 投资组合统计概览")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "初始资金",
+            f"¥{statistics.get('初始资金', 0):,.0f}"
+        )
+    with col2:
+        final_value = statistics.get('最终资产', 0)
+        initial_value = statistics.get('初始资金', 1)
+        total_return = statistics.get('总收益率', 0)
+        st.metric(
+            "最终资产",
+            f"¥{final_value:,.0f}",
+            delta=f"{total_return:.2f}%",
+            delta_color="normal" if total_return >= 0 else "inverse"
+        )
+    with col3:
+        st.metric(
+            "总收益",
+            f"¥{statistics.get('总收益', 0):,.0f}"
+        )
+    with col4:
+        st.metric(
+            "交易天数",
+            f"{statistics.get('交易天数', 0)} 天"
+        )
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "最大资产",
+            f"¥{statistics.get('最大资产', 0):,.0f}"
+        )
+    with col2:
+        st.metric(
+            "最大回撤",
+            f"{statistics.get('最大回撤', 0):.2f}%"
+        )
+    with col3:
+        st.metric(
+            "收益波动率",
+            f"{statistics.get('收益波动率', 0):.2f}%"
+        )
+    with col4:
+        sharpe = statistics.get('夏普比率', 0)
+        st.metric(
+            "夏普比率",
+            f"{sharpe:.2f}"
+        )
+    
+    st.divider()
+    
+    # 图表展示选项
+    chart_view = st.radio(
+        "选择视图",
+        ["📈 综合概览", "💰 资产曲线", "📊 收益率变化", "💼 资产配置", "🔄 交易操作", "📋 持仓分布", "📉 收益率分布"],
+        horizontal=True
+    )
+    
+    st.divider()
+    
+    # 根据选择显示不同图表
+    if chart_view == "📈 综合概览":
+        st.subheader("综合概览")
+        fig = create_combined_overview_chart(portfolio_df, selected_log['agent_name'])
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        
+    elif chart_view == "💰 资产曲线":
+        st.subheader("总资产变化曲线")
+        fig = create_portfolio_value_chart(portfolio_df)
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        
+    elif chart_view == "📊 收益率变化":
+        st.subheader("收益率变化")
+        fig = create_return_rate_chart(portfolio_df)
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        
+    elif chart_view == "💼 资产配置":
+        st.subheader("现金与持仓市值分布")
+        fig = create_cash_position_chart(portfolio_df)
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        
+    elif chart_view == "🔄 交易操作":
+        st.subheader("交易操作时间线")
+        fig = create_transactions_timeline(transactions_df)
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        
+        # 显示交易记录表格
+        if not transactions_df.empty:
+            st.subheader("📋 交易记录详情")
+            
+            # 添加筛选选项
+            col1, col2 = st.columns(2)
+            with col1:
+                operation_filter = st.multiselect(
+                    "筛选操作类型",
+                    options=transactions_df['操作'].unique().tolist(),
+                    default=transactions_df['操作'].unique().tolist()
+                )
+            
+            filtered_transactions = transactions_df[transactions_df['操作'].isin(operation_filter)]
+            
+            # 格式化显示
+            display_df = filtered_transactions.copy()
+            display_df['日期'] = display_df['日期'].dt.strftime('%Y-%m-%d')
+            display_df['金额'] = display_df['金额'].apply(lambda x: f"¥{x:,.2f}")
+            display_df['价格'] = display_df['价格'].apply(lambda x: f"¥{x:.2f}")
+            
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # 统计信息
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("总交易次数", len(filtered_transactions))
+            with col2:
+                buy_count = len(filtered_transactions[filtered_transactions['操作'].isin(['买入', '加仓'])])
+                st.metric("买入次数", buy_count)
+            with col3:
+                sell_count = len(filtered_transactions[filtered_transactions['操作'].isin(['卖出', '减仓'])])
+                st.metric("卖出次数", sell_count)
+            with col4:
+                unique_stocks = filtered_transactions['股票代码'].nunique()
+                st.metric("交易股票数", unique_stocks)
+    
+    elif chart_view == "📋 持仓分布":
+        st.subheader("持仓分布")
+        
+        # 选择日期查看持仓
+        selected_date = st.select_slider(
+            "选择日期",
+            options=portfolio_df['日期'].dt.strftime('%Y-%m-%d').tolist(),
+            value=portfolio_df['日期'].iloc[-1].strftime('%Y-%m-%d')
+        )
+        
+        # 获取该日期的持仓详情
+        date_data = portfolio_df[portfolio_df['日期'].dt.strftime('%Y-%m-%d') == selected_date].iloc[0]
+        holdings_str = date_data['持仓详情']
+        
+        fig = create_holdings_pie_chart(holdings_str, selected_date)
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        
+        # 显示详细持仓信息
+        if pd.notna(holdings_str) and holdings_str:
+            st.subheader("持仓明细")
+            holdings = agent_loader.parse_holdings_detail(holdings_str)
+            
+            if holdings:
+                holdings_display = []
+                for h in holdings:
+                    holdings_display.append({
+                        '股票代码': h['symbol'],
+                        '持仓数量': f"{h['shares']} 股",
+                        '成本价格': f"¥{h['price']:.2f}",
+                        '市值': f"¥{h['shares'] * h['price']:,.2f}",
+                        '持仓收益率': f"{h['return_rate']:.2f}%"
+                    })
+                
+                st.dataframe(
+                    pd.DataFrame(holdings_display),
+                    use_container_width=True,
+                    hide_index=True
+                )
+    
+    elif chart_view == "📉 收益率分布":
+        st.subheader("日收益率分布")
+        fig = create_daily_return_distribution(portfolio_df)
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        
+        # 显示收益率统计
+        daily_returns = portfolio_df['收益率'].diff().dropna()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("平均日收益率", f"{daily_returns.mean():.3f}%")
+        with col2:
+            st.metric("收益率标准差", f"{daily_returns.std():.3f}%")
+        with col3:
+            st.metric("最大单日收益", f"{daily_returns.max():.2f}%")
+        with col4:
+            st.metric("最大单日亏损", f"{daily_returns.min():.2f}%")
+    
+    # 决策日志查看（如果存在）
+    if selected_log['decision_file']:
+        st.divider()
+        with st.expander("📝 查看AI决策日志"):
+            decisions = agent_loader.load_decision_log(selected_log['decision_file'])
+            
+            if decisions:
+                # 选择日期查看决策
+                decision_dates = [d['trade_date'] for d in decisions]
+                selected_decision_date = st.selectbox(
+                    "选择日期查看决策分析",
+                    options=decision_dates
+                )
+                
+                # 显示该日期的决策
+                decision = next((d for d in decisions if d['trade_date'] == selected_decision_date), None)
+                
+                if decision:
+                    st.markdown(f"**交易日期：** {decision['trade_date']}")
+                    st.markdown(f"**记录时间：** {decision['timestamp']}")
+                    
+                    if decision['market_analysis']:
+                        st.markdown("**市场分析：**")
+                        st.text(decision['market_analysis'])
+                    
+                    if decision['decision_reason']:
+                        st.markdown("**决策理由：**")
+                        st.text(decision['decision_reason'])
+            else:
+                st.info("暂无决策日志内容")
 
 
 if __name__ == "__main__":
