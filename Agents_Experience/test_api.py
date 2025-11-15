@@ -43,19 +43,39 @@ def test_api_connection():
         # 处理流式响应
         done_thinking = False
         full_response = ""
+        has_reasoning = None  # 用于检测模型是否支持reasoning
         
         for chunk in response:
-            thinking_chunk = chunk.choices[0].delta.reasoning_content
-            answer_chunk = chunk.choices[0].delta.content
+            delta = chunk.choices[0].delta
             
-            if thinking_chunk and thinking_chunk != '':
-                print(thinking_chunk, end='', flush=True)
-            elif answer_chunk and answer_chunk != '':
-                if not done_thinking:
-                    print('\n\n=== 模型回复 ===\n')
-                    done_thinking = True
-                print(answer_chunk, end='', flush=True)
-                full_response += answer_chunk
+            # 首次检测模型是否支持reasoning_content
+            if has_reasoning is None:
+                has_reasoning = hasattr(delta, 'reasoning_content')
+                if has_reasoning:
+                    print("检测到模型支持思考功能\n")
+                else:
+                    print("模型不支持思考功能，使用标准模式\n")
+            
+            # 根据模型能力处理响应
+            if has_reasoning:
+                # 支持reasoning的模型
+                thinking_chunk = delta.reasoning_content
+                answer_chunk = delta.content
+                
+                if thinking_chunk and thinking_chunk != '':
+                    print(thinking_chunk, end='', flush=True)
+                elif answer_chunk and answer_chunk != '':
+                    if not done_thinking:
+                        print('\n\n=== 模型回复 ===\n')
+                        done_thinking = True
+                    print(answer_chunk, end='', flush=True)
+                    full_response += answer_chunk
+            else:
+                # 不支持reasoning的模型
+                answer_chunk = delta.content
+                if answer_chunk and answer_chunk != '':
+                    print(answer_chunk, end='', flush=True)
+                    full_response += answer_chunk
         
         print("\n")
         return True
