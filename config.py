@@ -21,3 +21,14 @@ MIN_COMMISSION = 5         # 最低佣金：5元
 
 # 数据下载配置
 DEFAULT_START_DATE = '20100101'  # 默认起始日期
+
+# MVP测试配置
+MVP_START_DATE = '2020-01-02'  # MVP测试起始日期
+MVP_END_DATE = '2020-12-31'    # MVP测试结束日期
+
+# MVP股票池（用于测试）
+MVP_STOCK_POOL = [
+    '600519',  # 贵州茅台
+    '600036',  # 招商银行
+    '000002',  # 万科A
+]
