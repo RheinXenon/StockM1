@@ -44,3 +44,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Environment variables (敏感信息)
+.env
+Agents_Experience/.env
+*.env
+!.env.example
