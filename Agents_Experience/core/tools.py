@@ -182,8 +182,8 @@ class TradingTools:
                         "MACD值": round(indicators['MACD'], 4) if indicators['MACD'] else None,
                         "信号线": round(indicators['MACD_Signal'], 4) if indicators['MACD_Signal'] else None,
                         "柱状图": round(indicators['MACD_Hist'], 4) if indicators['MACD_Hist'] else None,
-                        "金叉": indicators['MACD_golden_cross'],
-                        "死叉": indicators['MACD_death_cross']
+                        "金叉": bool(indicators['MACD_golden_cross']),
+                        "死叉": bool(indicators['MACD_death_cross'])
                     },
                     "RSI": {
                         "RSI值": round(indicators['RSI'], 2) if indicators['RSI'] else None,
