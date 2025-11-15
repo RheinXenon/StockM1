@@ -23,18 +23,30 @@ from visualization.indicators import calculate_all_indicators, calculate_returns
 from visualization.charts import (
     create_candlestick_chart, create_volume_chart, create_macd_chart,
     create_rsi_chart, create_kdj_chart, create_bollinger_chart,
-    create_combined_chart, create_comparison_chart, create_returns_chart
+    create_combined_chart, create_comparison_chart, create_returns_chart,
+    create_comparison_with_index
 )
 from visualization.agent_data_loader import AgentDataLoader
 from visualization.agent_charts import (
     create_portfolio_value_chart, create_return_rate_chart,
     create_cash_position_chart, create_combined_overview_chart,
     create_transactions_timeline, create_holdings_pie_chart,
-    create_daily_return_distribution
+    create_daily_return_distribution, create_portfolio_value_chart_with_index
 )
 from src.stock_app.data_downloader import DataDownloader
 from src.stock_app.database import Database
 import time
+
+# 常用指数定义（使用SH/SZ前缀区分市场，避免与股票代码冲突）
+COMMON_INDICES = {
+    'sh.000001': '上证指数',
+    'sz.399001': '深证成指',
+    'sz.399006': '创业板指',
+    'sh.000300': '沪深300',
+    'sh.000016': '上证50',
+    'sh.000905': '中证500',
+    'sz.399673': '创业板50'
+}
 
 # Plotly配置（避免警告）
 PLOTLY_CONFIG = {
@@ -103,6 +115,13 @@ def get_cached_indicators(df, symbol, start_date, end_date):
     df_copy = calculate_volatility(df_copy)
     return df_copy
 
+@st.cache_data(ttl=300)
+def get_cached_index_data(index_symbol, start_date, end_date):
+    """\u7f13\u5b58\u6307\u6570\u6570\u636e\u67e5\u8be2"""
+    # 将sh.000001格式转换为000001，因为数据库中只存储纯代码
+    pure_symbol = index_symbol.split('.')[-1] if '.' in index_symbol else index_symbol
+    return data_loader.get_index_data(pure_symbol, start_date, end_date)
+
 
 def main():
     """主函数"""
@@ -112,7 +131,7 @@ def main():
     st.sidebar.title("导航菜单")
     page = st.sidebar.radio(
         "选择页面",
-        ["📊 股票列表", "📈 股票详细分析", "🔍 多股票对比", "📉 技术指标分析", "📊 统计分析", "🤖 AI Agent交易结果", "⬇️ 下载股票数据"]
+        ["📊 股票列表", "📈 股票详细分析", "🔍 多股票对比", "📉 技术指标分析", "📊 统计分析", "💻 AI Agent交易结果", "⬇️ 下载股票数据"]
     )
     
     # 根据选择显示不同页面
@@ -126,7 +145,7 @@ def main():
         show_indicators_page()
     elif page == "📊 统计分析":
         show_statistics_page()
-    elif page == "🤖 AI Agent交易结果":
+    elif page == "💻 AI Agent交易结果":
         show_ai_agent_page()
     elif page == "⬇️ 下载股票数据":
         show_download_page()
@@ -323,6 +342,17 @@ def show_stock_detail_page():
     
     st.divider()
     
+    # 指数选择
+    with st.expander("📊 添加指数对比（可选）", expanded=False):
+        selected_indices = st.multiselect(
+            "选择要对比的指数",
+            options=list(COMMON_INDICES.keys()),
+            format_func=lambda x: f"{x} - {COMMON_INDICES[x]}",
+            default=[],
+            help="在收益率分析中显示指数对比",
+            key="detail_indices"
+        )
+    
     # 图表选项
     chart_type = st.radio(
         "选择图表类型",
@@ -353,8 +383,27 @@ def show_stock_detail_page():
         fig = create_bollinger_chart(df)
         st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     elif chart_type == "收益率分析":
-        fig = create_returns_chart(df)
-        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
+        # 如果选择了指数，创建对比图
+        if selected_indices:
+            # 获取指数数据
+            index_data_dict = {}
+            with st.spinner(f'加载 {len(selected_indices)} 个指数数据...'):
+                for index_symbol in selected_indices:
+                    index_df = get_cached_index_data(index_symbol, start_date_str, end_date_str)
+                    if not index_df.empty:
+                        index_data_dict[index_symbol] = index_df
+            
+            # 创建对比图（归一化）
+            st.subheader("收益率对比（归一化）")
+            data_dict = {symbol: df}
+            if index_data_dict:
+                fig = create_comparison_with_index(data_dict, index_data_dict, COMMON_INDICES, f"{symbol} vs 指数对比")
+            else:
+                fig = create_comparison_chart(data_dict, f"{symbol} 收益率")
+            st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
+        else:
+            fig = create_returns_chart(df)
+            st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     
     # 数据表格
     with st.expander("📊 查看原始数据"):
@@ -392,7 +441,7 @@ def show_comparison_page():
     
     symbols = [stock_options[s] for s in selected_stocks]
     
-    # 日期范围
+    # 日期范围和指数选择
     col1, col2 = st.columns(2)
     with col1:
         date_range = st.selectbox(
@@ -400,6 +449,16 @@ def show_comparison_page():
             ["近1个月", "近3个月", "近6个月", "近1年", "近3年"],
             index=2
         )
+    
+    # 指数选择
+    st.subheader("📊 添加指数对比")
+    selected_indices = st.multiselect(
+        "选择要对比的指数（可选）",
+        options=list(COMMON_INDICES.keys()),
+        format_func=lambda x: f"{x} - {COMMON_INDICES[x]}",
+        default=[],
+        help="选择指数与股票进行对比分析"
+    )
     
     # 计算日期
     end_date = datetime.now()
@@ -417,7 +476,7 @@ def show_comparison_page():
     start_date_str = start_date.strftime('%Y-%m-%d')
     end_date_str = end_date.strftime('%Y-%m-%d')
     
-    # 获取数据（使用缓存）
+    # 获取股票数据（使用缓存）
     with st.spinner(f'加载 {len(symbols)} 只股票数据...'):
         data_dict = get_cached_multiple_stocks(tuple(symbols), start_date_str, end_date_str)
     
@@ -425,9 +484,21 @@ def show_comparison_page():
         st.warning("未找到数据")
         return
     
+    # 获取指数数据
+    index_data_dict = {}
+    if selected_indices:
+        with st.spinner(f'加载 {len(selected_indices)} 个指数数据...'):
+            for index_symbol in selected_indices:
+                index_df = get_cached_index_data(index_symbol, start_date_str, end_date_str)
+                if not index_df.empty:
+                    index_data_dict[index_symbol] = index_df
+    
     # 对比图表
     st.subheader("价格走势对比（归一化）")
-    fig = create_comparison_chart(data_dict, "股票价格对比")
+    if index_data_dict:
+        fig = create_comparison_with_index(data_dict, index_data_dict, COMMON_INDICES, "股票与指数对比")
+    else:
+        fig = create_comparison_chart(data_dict, "股票价格对比")
     st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     
     # 统计对比表
@@ -1074,7 +1145,7 @@ def download_batch_by_range(downloader, db, start_date, end_date, interval, star
 
 def show_ai_agent_page():
     """显示AI Agent交易结果页面"""
-    st.header("🤖 AI Agent交易结果分析")
+    st.header("💻 AI Agent交易结果分析")
     
     st.info("💡 展示AI Agents的炒股操作结果，包括资产曲线、收益率变化和每日交易操作。")
     
@@ -1173,6 +1244,18 @@ def show_ai_agent_page():
     
     st.divider()
     
+    # 指数选择（在侧边栏）
+    with st.sidebar:
+        st.subheader("📊 指数对比设置")
+        selected_indices = st.multiselect(
+            "选择指数进行对比",
+            options=list(COMMON_INDICES.keys()),
+            format_func=lambda x: f"{COMMON_INDICES[x]}",
+            default=[],
+            help="在资产曲线图中显示指数走势对比",
+            key="agent_indices"
+        )
+    
     # 图表展示选项
     chart_view = st.radio(
         "选择视图",
@@ -1185,12 +1268,59 @@ def show_ai_agent_page():
     # 根据选择显示不同图表
     if chart_view == "📈 综合概览":
         st.subheader("综合概览")
-        fig = create_combined_overview_chart(portfolio_df, selected_log['agent_name'])
+        
+        # 获取指数数据（如果已选择）
+        index_data_dict = {}
+        if selected_indices:
+            start_date_str = portfolio_df['日期'].min().strftime('%Y-%m-%d')
+            end_date_str = portfolio_df['日期'].max().strftime('%Y-%m-%d')
+            
+            with st.spinner(f'加载 {len(selected_indices)} 个指数数据...'):
+                for index_symbol in selected_indices:
+                    index_df = get_cached_index_data(index_symbol, start_date_str, end_date_str)
+                    if not index_df.empty:
+                        index_data_dict[index_symbol] = index_df
+        
+        # 创建图表
+        if index_data_dict:
+            fig = create_combined_overview_chart(
+                portfolio_df, 
+                selected_log['agent_name'],
+                index_data_dict,
+                COMMON_INDICES
+            )
+        else:
+            fig = create_combined_overview_chart(portfolio_df, selected_log['agent_name'])
+        
         st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
         
     elif chart_view == "💰 资产曲线":
         st.subheader("总资产变化曲线")
-        fig = create_portfolio_value_chart(portfolio_df)
+        
+        # 获取指数数据
+        index_data_dict = {}
+        if selected_indices:
+            # 获取日期范围
+            start_date_str = portfolio_df['日期'].min().strftime('%Y-%m-%d')
+            end_date_str = portfolio_df['日期'].max().strftime('%Y-%m-%d')
+            
+            with st.spinner(f'加载 {len(selected_indices)} 个指数数据...'):
+                for index_symbol in selected_indices:
+                    index_df = get_cached_index_data(index_symbol, start_date_str, end_date_str)
+                    if not index_df.empty:
+                        index_data_dict[index_symbol] = index_df
+        
+        # 根据是否有指数数据选择不同的图表
+        if index_data_dict:
+            fig = create_portfolio_value_chart_with_index(
+                portfolio_df, 
+                index_data_dict, 
+                COMMON_INDICES,
+                "投资组合 vs 指数对比"
+            )
+        else:
+            fig = create_portfolio_value_chart(portfolio_df)
+        
         st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
         
     elif chart_view == "📊 收益率变化":

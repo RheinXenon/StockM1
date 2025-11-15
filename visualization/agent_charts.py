@@ -4,7 +4,7 @@ AI Agent交易结果可视化图表组件
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 def create_portfolio_value_chart(df: pd.DataFrame, title: str = "投资组合总资产变化") -> go.Figure:
@@ -142,7 +142,10 @@ def create_cash_position_chart(df: pd.DataFrame, title: str = "现金与持仓�
     return fig
 
 
-def create_combined_overview_chart(df: pd.DataFrame, agent_name: str = "") -> go.Figure:
+def create_combined_overview_chart(df: pd.DataFrame, 
+                                   agent_name: str = "",
+                                   index_data_dict: Optional[Dict[str, pd.DataFrame]] = None,
+                                   index_names: Optional[Dict[str, str]] = None) -> go.Figure:
     """
     创建综合概览图表（资产、收益率、现金持仓分布）
     
@@ -203,6 +206,32 @@ def create_combined_overview_chart(df: pd.DataFrame, agent_name: str = "") -> go
     ), row=2, col=1)
     
     fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3, row=2, col=1)
+    
+    # 添加指数对比（在收益率行）
+    if index_data_dict and index_names and len(df) > 0:
+        initial_value = df['总资产'].iloc[0]
+        index_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8']
+        
+        for i, (symbol, index_df) in enumerate(index_data_dict.items()):
+            if not index_df.empty and 'close' in index_df.columns:
+                # 归一化（以第一个值为基准，转换为收益率）
+                normalized = (index_df['close'] / index_df['close'].iloc[0] - 1) * 100
+                
+                display_name = index_names.get(symbol, symbol)
+                
+                fig.add_trace(go.Scatter(
+                    x=index_df['date'],
+                    y=normalized,
+                    mode='lines',
+                    name=f"{display_name}",
+                    line=dict(
+                        color=index_colors[i % len(index_colors)], 
+                        width=1.5,
+                        dash='dash'
+                    ),
+                    opacity=0.7,
+                    showlegend=True
+                ), row=2, col=1)
     
     # 3. 资产配置堆叠图
     fig.add_trace(go.Scatter(
@@ -426,6 +455,88 @@ def create_daily_return_distribution(df: pd.DataFrame, title: str = "日收益�
         template='plotly_white',
         height=400,
         showlegend=False
+    )
+    
+    return fig
+
+
+def create_portfolio_value_chart_with_index(df: pd.DataFrame, 
+                                           index_data_dict: Optional[Dict[str, pd.DataFrame]] = None,
+                                           index_names: Optional[Dict[str, str]] = None,
+                                           title: str = "投资组合总资产变化") -> go.Figure:
+    """
+    创建带指数对比的投资组合总资产变化曲线图
+    
+    Args:
+        df: 包含日期、总资产数据的DataFrame
+        index_data_dict: {index_symbol: df} 指数数据字典
+        index_names: {index_symbol: display_name} 指数显示名称映射
+        title: 图表标题
+    """
+    fig = go.Figure()
+    
+    # 总资产曲线（归一化为收益率）
+    if len(df) > 0 and '总资产' in df.columns:
+        initial_value = df['总资产'].iloc[0]
+        portfolio_return = (df['总资产'] / initial_value - 1) * 100
+        
+        fig.add_trace(go.Scatter(
+            x=df['日期'],
+            y=portfolio_return,
+            mode='lines+markers',
+            name='投资组合',
+            line=dict(color='blue', width=3),
+            marker=dict(size=4),
+            fill='tozeroy',
+            fillcolor='rgba(0, 100, 255, 0.1)'
+        ))
+    
+    # 添加指数曲线
+    if index_data_dict and index_names:
+        index_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8']
+        
+        for i, (symbol, index_df) in enumerate(index_data_dict.items()):
+            if not index_df.empty and 'close' in index_df.columns:
+                # 归一化（以第一个值为基准）
+                normalized = (index_df['close'] / index_df['close'].iloc[0] - 1) * 100
+                
+                display_name = index_names.get(symbol, symbol)
+                
+                fig.add_trace(go.Scatter(
+                    x=index_df['date'],
+                    y=normalized,
+                    mode='lines',
+                    name=f"{display_name}",
+                    line=dict(
+                        color=index_colors[i % len(index_colors)], 
+                        width=2,
+                        dash='dash'
+                    ),
+                    opacity=0.8
+                ))
+    
+    # 添加零轴参考线
+    fig.add_hline(
+        y=0,
+        line_dash="dash",
+        line_color="gray",
+        opacity=0.5
+    )
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title='日期',
+        yaxis_title='收益率 (%)',
+        template='plotly_white',
+        height=500,
+        hovermode='x unified',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
     )
     
     return fig

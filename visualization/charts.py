@@ -4,7 +4,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 def create_candlestick_chart(df: pd.DataFrame, 
@@ -534,5 +534,70 @@ def create_returns_chart(df: pd.DataFrame, title: str = "收益率分析") -> go
     
     fig.update_yaxes(title_text="收益率 (%)", row=1, col=1)
     fig.update_yaxes(title_text="累计收益率 (%)", row=2, col=1)
+    
+    return fig
+
+
+def add_index_to_comparison(fig: go.Figure, 
+                           index_data_dict: Dict[str, pd.DataFrame],
+                           index_names: Dict[str, str] = None) -> go.Figure:
+    """
+    向对比图表中添加指数曲线
+    
+    Args:
+        fig: 现有的图表对象
+        index_data_dict: {index_symbol: df} 指数数据字典
+        index_names: {index_symbol: display_name} 指数显示名称映射
+    
+    Returns:
+        添加了指数曲线的图表对象
+    """
+    if index_names is None:
+        index_names = {}
+    
+    # 指数专用颜色（虚线样式）
+    index_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8']
+    
+    for i, (symbol, df) in enumerate(index_data_dict.items()):
+        if not df.empty and 'close' in df.columns:
+            # 归一化（以第一个值为基准）
+            normalized = (df['close'] / df['close'].iloc[0] - 1) * 100
+            
+            display_name = index_names.get(symbol, symbol)
+            
+            fig.add_trace(go.Scatter(
+                x=df['date'],
+                y=normalized,
+                mode='lines',
+                name=f"{display_name} (指数)",
+                line=dict(
+                    color=index_colors[i % len(index_colors)], 
+                    width=2.5,
+                    dash='dash'  # 虚线样式
+                ),
+                opacity=0.8
+            ))
+    
+    return fig
+
+
+def create_comparison_with_index(data_dict: dict, 
+                                index_data_dict: dict = None,
+                                index_names: dict = None,
+                                title: str = "股票对比") -> go.Figure:
+    """
+    创建包含指数的多股票对比图（归一化）
+    
+    Args:
+        data_dict: {symbol: df} 股票数据字典
+        index_data_dict: {index_symbol: df} 指数数据字典
+        index_names: {index_symbol: display_name} 指数显示名称映射
+        title: 图表标题
+    """
+    fig = create_comparison_chart(data_dict, title)
+    
+    # 添加指数曲线
+    if index_data_dict:
+        fig = add_index_to_comparison(fig, index_data_dict, index_names)
     
     return fig
