@@ -26,7 +26,7 @@ class TradingTools:
                         "properties": {
                             "symbol": {
                                 "type": "string",
-                                "description": "股票代码，可选值：600519(贵州茅台)、600036(招商银行)、000002(万科A)",
+                                "description": f"股票代码，可选值：{', '.join(self.stock_pool)}",
                                 "enum": self.stock_pool
                             },
                             "days": {

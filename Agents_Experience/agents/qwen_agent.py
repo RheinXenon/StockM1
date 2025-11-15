@@ -9,7 +9,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from prompts.system_prompt import SYSTEM_PROMPT, DAILY_DECISION_PROMPT
+from prompts.system_prompt import generate_system_prompt, DAILY_DECISION_PROMPT
 
 
 class QwenAgent(BaseAgent):
@@ -21,7 +21,9 @@ class QwenAgent(BaseAgent):
                  api_base: str = "https://api.suanli.cn/v1",
                  api_key: str = "",
                  model: str = "free:Qwen3-30B-A3B",
-                 temperature: float = 0.7):
+                 temperature: float = 0.7,
+                 stock_pool: List[str] = None,
+                 stock_names: Dict[str, str] = None):
         super().__init__(agent_id, name)
         self.api_base = api_base
         self.api_key = api_key
@@ -35,8 +37,16 @@ class QwenAgent(BaseAgent):
             api_key=api_key
         )
         
-        # 初始化系统提示词
-        self.system_prompt = SYSTEM_PROMPT
+        # 动态生成系统提示词
+        if stock_pool and stock_names:
+            self.system_prompt = generate_system_prompt(stock_pool, stock_names)
+        else:
+            # 如果没有提供股票池，使用默认配置
+            from Agents_Experience import config
+            self.system_prompt = generate_system_prompt(
+                config.MVP_STOCK_POOL, 
+                config.STOCK_NAMES
+            )
     
     def _call_api(self, messages: List[Dict], tools: Optional[List[Dict]] = None) -> Dict:
         """

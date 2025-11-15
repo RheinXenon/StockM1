@@ -33,11 +33,14 @@ def main():
         api_base=config.QWEN_API_BASE,
         api_key=config.QWEN_API_KEY,
         model=config.QWEN_MODEL,
-        temperature=config.TEMPERATURE
+        temperature=config.TEMPERATURE,
+        stock_pool=config.MVP_STOCK_POOL,
+        stock_names=config.STOCK_NAMES
     )
     print(f"✓ Agent初始化完成: {agent.name}")
     print(f"  模型: {config.QWEN_MODEL}")
-    print(f"  温度: {config.TEMPERATURE}\n")
+    print(f"  温度: {config.TEMPERATURE}")
+    print(f"  股票池: {len(config.MVP_STOCK_POOL)}只股票\n")
     
     # 创建模拟器
     print("初始化交易模拟器...")
