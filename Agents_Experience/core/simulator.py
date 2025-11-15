@@ -12,6 +12,7 @@ import json
 from src.stock_app.portfolio import Portfolio, Position
 from .data_provider import MarketDataProvider
 from .tools import TradingTools
+from ..utils.logger import DualLogger
 
 
 class TradingSimulator:
@@ -52,6 +53,9 @@ class TradingSimulator:
         # 交易记录
         self.trade_log = []
         self.daily_snapshots = []
+        
+        # 初始化双日志系统
+        self.dual_logger = DualLogger(f"agent_{agent.agent_id}")
         
         # 交易成本配置
         self.commission_rate = 0.0003
@@ -94,6 +98,9 @@ class TradingSimulator:
             decision = self._agent_decide(current_date)
             
             if decision and decision.get('success'):
+                # 记录决策到日志
+                self.dual_logger.log_decision(current_date, decision)
+                
                 # 执行交易动作
                 self._execute_actions(current_date, decision['actions'])
                 
@@ -101,13 +108,22 @@ class TradingSimulator:
                 print(f"\n决策分析: {decision.get('analysis', '')[:200]}")
                 print(f"决策理由: {decision.get('reasoning', '')[:200]}")
             else:
+                # 即使决策失败也记录
+                self.dual_logger.log_decision(current_date, decision)
                 print(f"决策失败: {decision.get('reasoning', '未知错误')}")
             
             # 记录每日快照
             self._take_snapshot(current_date)
             
+            # 记录每日资产情况到日志
+            summary = self.portfolio.get_summary()
+            self.dual_logger.log_portfolio(current_date, summary, self.portfolio.positions)
+            
             # 打印账户状态
             self._print_portfolio_summary()
+        
+        # 关闭日志文件
+        self.dual_logger.close()
         
         # 生成最终报告
         return self._generate_report()
