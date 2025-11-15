@@ -18,6 +18,9 @@ from visualization.charts import (
     create_rsi_chart, create_kdj_chart, create_bollinger_chart,
     create_combined_chart, create_comparison_chart, create_returns_chart
 )
+from src.stock_app.data_downloader import DataDownloader
+from src.stock_app.database import Database
+import time
 
 # 页面配置
 st.set_page_config(
@@ -43,7 +46,7 @@ def main():
     st.sidebar.title("导航菜单")
     page = st.sidebar.radio(
         "选择页面",
-        ["📊 股票列表", "📈 股票详细分析", "🔍 多股票对比", "📉 技术指标分析", "📊 统计分析"]
+        ["📊 股票列表", "📈 股票详细分析", "🔍 多股票对比", "📉 技术指标分析", "📊 统计分析", "⬇️ 下载股票数据"]
     )
     
     # 根据选择显示不同页面
@@ -57,6 +60,8 @@ def main():
         show_indicators_page()
     elif page == "📊 统计分析":
         show_statistics_page()
+    elif page == "⬇️ 下载股票数据":
+        show_download_page()
 
 
 def show_stock_list_page():
@@ -581,6 +586,376 @@ def show_statistics_page():
         )
         fig.update_traces(marker_color='lightblue', marker_line_color='darkblue', marker_line_width=1)
         st.plotly_chart(fig, use_container_width=True)
+
+
+def show_download_page():
+    """显示股票下载页面"""
+    st.header("⬇️ 下载股票数据")
+    
+    st.info("💡 从数据源下载股票历史数据并保存到本地数据库。支持单个下载、批量下载和搜索下载。")
+    
+    # 初始化下载器和数据库
+    @st.cache_resource
+    def get_downloader_and_db():
+        return DataDownloader(), Database()
+    
+    downloader, db = get_downloader_and_db()
+    
+    # 下载模式选择
+    download_mode = st.radio(
+        "选择下载模式",
+        ["📋 单个股票", "🔍 搜索并下载", "📦 批量下载"],
+        horizontal=True
+    )
+    
+    st.divider()
+    
+    # 时间范围设置（通用）
+    st.subheader("⏰ 时间范围设置")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        use_default_range = st.checkbox("使用默认时间范围（从2010-01-01至今）", value=True)
+    
+    if not use_default_range:
+        with col1:
+            start_date = st.date_input(
+                "开始日期",
+                value=datetime(2020, 1, 1),
+                min_value=datetime(2000, 1, 1),
+                max_value=datetime.now()
+            )
+        with col2:
+            end_date = st.date_input(
+                "结束日期",
+                value=datetime.now(),
+                min_value=datetime(2000, 1, 1),
+                max_value=datetime.now()
+            )
+        start_date_str = start_date.strftime('%Y%m%d')
+        end_date_str = end_date.strftime('%Y%m%d')
+    else:
+        start_date_str = '20100101'
+        end_date_str = datetime.now().strftime('%Y%m%d')
+        st.caption(f"将下载从 2010-01-01 到 {datetime.now().strftime('%Y-%m-%d')} 的数据")
+    
+    # 请求间隔设置（通用）
+    st.subheader("⚙️ 请求设置")
+    request_interval = st.slider(
+        "请求间隔（秒）- 避免请求过快被限制",
+        min_value=0.5,
+        max_value=10.0,
+        value=2.0,
+        step=0.5,
+        help="设置每次请求之间的等待时间，建议2-3秒"
+    )
+    
+    st.divider()
+    
+    # 根据不同模式显示不同的下载界面
+    if download_mode == "📋 单个股票":
+        show_single_download_section(downloader, db, start_date_str, end_date_str, request_interval)
+    elif download_mode == "🔍 搜索并下载":
+        show_search_download_section(downloader, db, start_date_str, end_date_str, request_interval)
+    elif download_mode == "📦 批量下载":
+        show_batch_download_section(downloader, db, start_date_str, end_date_str, request_interval)
+
+
+def show_single_download_section(downloader, db, start_date, end_date, interval):
+    """单个股票下载部分"""
+    st.subheader("📋 单个股票下载")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        stock_symbol = st.text_input(
+            "输入股票代码",
+            placeholder="例如: 000001, 600000",
+            help="输入6位数字股票代码"
+        )
+    
+    with col2:
+        st.write("")
+        st.write("")
+        if st.button("🚀 开始下载", type="primary", use_container_width=True):
+            if not stock_symbol:
+                st.error("❌ 请输入股票代码")
+            else:
+                download_single_stock(downloader, db, stock_symbol.strip(), start_date, end_date)
+
+
+def show_search_download_section(downloader, db, start_date, end_date, interval):
+    """搜索并下载部分"""
+    st.subheader("🔍 搜索并下载")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        search_keyword = st.text_input(
+            "搜索股票（代码或名称）",
+            placeholder="例如: 平安银行, 000001",
+            help="输入股票代码或名称进行搜索"
+        )
+    
+    if search_keyword:
+        with st.spinner("正在搜索股票列表..."):
+            try:
+                stock_list = downloader.get_stock_list()
+                if not stock_list.empty:
+                    # 搜索匹配
+                    matched = stock_list[
+                        stock_list['code'].str.contains(search_keyword, na=False) |
+                        stock_list['name'].str.contains(search_keyword, na=False)
+                    ]
+                    
+                    if not matched.empty:
+                        st.success(f"✅ 找到 {len(matched)} 只匹配的股票")
+                        
+                        # 显示匹配结果
+                        display_df = matched[['code', 'name']].rename(columns={
+                            'code': '股票代码',
+                            'name': '股票名称'
+                        })
+                        st.dataframe(display_df, use_container_width=True, hide_index=True)
+                        
+                        # 下载选项
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            download_all = st.checkbox("下载所有搜索结果", value=False)
+                        
+                        if download_all:
+                            if st.button("🚀 下载所有搜索到的股票", type="primary"):
+                                download_multiple_stocks(
+                                    downloader, db, matched['code'].tolist(),
+                                    start_date, end_date, interval
+                                )
+                        else:
+                            selected_codes = st.multiselect(
+                                "选择要下载的股票",
+                                options=matched['code'].tolist(),
+                                format_func=lambda x: f"{x} - {matched[matched['code']==x]['name'].values[0]}"
+                            )
+                            
+                            if selected_codes and st.button("🚀 下载选中的股票", type="primary"):
+                                download_multiple_stocks(
+                                    downloader, db, selected_codes,
+                                    start_date, end_date, interval
+                                )
+                    else:
+                        st.warning("⚠️ 未找到匹配的股票")
+                else:
+                    st.error("❌ 获取股票列表失败")
+            except Exception as e:
+                st.error(f"❌ 搜索失败: {str(e)}")
+
+
+def show_batch_download_section(downloader, db, start_date, end_date, interval):
+    """批量下载部分"""
+    st.subheader("📦 批量下载")
+    
+    st.warning("⚠️ 批量下载会消耗较长时间，请合理设置下载数量和请求间隔")
+    
+    # 批量下载选项
+    batch_mode = st.radio(
+        "批量模式",
+        ["按数量下载", "按股票代码范围下载"],
+        horizontal=True
+    )
+    
+    if batch_mode == "按数量下载":
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            limit = st.number_input(
+                "下载数量",
+                min_value=1,
+                max_value=5000,
+                value=10,
+                step=10,
+                help="限制下载的股票数量"
+            )
+        
+        with col2:
+            skip = st.number_input(
+                "跳过前N只",
+                min_value=0,
+                max_value=5000,
+                value=0,
+                step=10,
+                help="跳过列表前面的股票"
+            )
+        
+        if st.button("🚀 开始批量下载", type="primary"):
+            download_batch_by_limit(downloader, db, start_date, end_date, interval, limit, skip)
+    
+    else:  # 按股票代码范围
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            start_code = st.text_input(
+                "起始代码",
+                value="000001",
+                help="输入起始股票代码"
+            )
+        
+        with col2:
+            end_code = st.text_input(
+                "结束代码",
+                value="000100",
+                help="输入结束股票代码"
+            )
+        
+        if st.button("🚀 开始范围下载", type="primary"):
+            download_batch_by_range(downloader, db, start_date, end_date, interval, start_code, end_code)
+
+
+def download_single_stock(downloader, db, symbol, start_date, end_date):
+    """下载单个股票"""
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    try:
+        status_text.text(f"正在下载 {symbol}...")
+        progress_bar.progress(30)
+        
+        df = downloader.get_stock_daily_data(symbol, start_date, end_date)
+        progress_bar.progress(70)
+        
+        if not df.empty:
+            # 保存到数据库
+            db.save_stock_daily_data(symbol, df)
+            progress_bar.progress(100)
+            status_text.empty()
+            st.success(f"✅ 成功下载 {symbol}，共 {len(df)} 条数据")
+            
+            # 显示数据预览
+            with st.expander("查看数据预览"):
+                st.dataframe(df.head(10), use_container_width=True)
+        else:
+            progress_bar.progress(100)
+            status_text.empty()
+            st.warning(f"⚠️ 股票 {symbol} 无数据或下载失败")
+    
+    except Exception as e:
+        progress_bar.progress(100)
+        status_text.empty()
+        st.error(f"❌ 下载失败: {str(e)}")
+
+
+def download_multiple_stocks(downloader, db, symbols, start_date, end_date, interval):
+    """下载多个股票"""
+    total = len(symbols)
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    success_count = 0
+    failed_count = 0
+    
+    for idx, symbol in enumerate(symbols):
+        try:
+            status_text.text(f"正在下载 {symbol} ({idx + 1}/{total})...")
+            
+            df = downloader.get_stock_daily_data(symbol, start_date, end_date)
+            
+            if not df.empty:
+                db.save_stock_daily_data(symbol, df)
+                success_count += 1
+            else:
+                failed_count += 1
+            
+            # 更新进度
+            progress_bar.progress((idx + 1) / total)
+            
+            # 等待间隔
+            if idx < total - 1:  # 最后一个不需要等待
+                time.sleep(interval)
+        
+        except Exception as e:
+            failed_count += 1
+            st.error(f"下载 {symbol} 失败: {str(e)}")
+    
+    progress_bar.progress(1.0)
+    status_text.empty()
+    
+    # 显示结果
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("成功", success_count, delta=success_count)
+    with col2:
+        st.metric("失败", failed_count, delta=-failed_count if failed_count > 0 else 0)
+    
+    if success_count > 0:
+        st.success(f"✅ 批量下载完成！成功 {success_count} 只，失败 {failed_count} 只")
+    else:
+        st.error("❌ 所有股票下载失败")
+
+
+def download_batch_by_limit(downloader, db, start_date, end_date, interval, limit, skip):
+    """按数量批量下载"""
+    status_text = st.empty()
+    
+    try:
+        status_text.text("正在获取股票列表...")
+        stock_list = downloader.get_stock_list()
+        
+        if stock_list.empty:
+            st.error("❌ 获取股票列表失败")
+            return
+        
+        # 应用跳过和限制
+        stock_list = stock_list.iloc[skip:skip + limit]
+        symbols = stock_list['code'].tolist()
+        
+        status_text.empty()
+        st.info(f"📊 将下载 {len(symbols)} 只股票")
+        
+        # 调用多股票下载
+        download_multiple_stocks(downloader, db, symbols, start_date, end_date, interval)
+        
+        # 同时保存股票信息
+        db.save_stock_info(stock_list)
+    
+    except Exception as e:
+        status_text.empty()
+        st.error(f"❌ 批量下载失败: {str(e)}")
+
+
+def download_batch_by_range(downloader, db, start_date, end_date, interval, start_code, end_code):
+    """按代码范围批量下载"""
+    status_text = st.empty()
+    
+    try:
+        status_text.text("正在获取股票列表...")
+        stock_list = downloader.get_stock_list()
+        
+        if stock_list.empty:
+            st.error("❌ 获取股票列表失败")
+            return
+        
+        # 过滤代码范围
+        filtered = stock_list[
+            (stock_list['code'] >= start_code) & 
+            (stock_list['code'] <= end_code)
+        ]
+        
+        if filtered.empty:
+            status_text.empty()
+            st.warning(f"⚠️ 在代码范围 {start_code} - {end_code} 内未找到股票")
+            return
+        
+        symbols = filtered['code'].tolist()
+        status_text.empty()
+        st.info(f"📊 在范围内找到 {len(symbols)} 只股票")
+        
+        # 调用多股票下载
+        download_multiple_stocks(downloader, db, symbols, start_date, end_date, interval)
+        
+        # 同时保存股票信息
+        db.save_stock_info(filtered)
+    
+    except Exception as e:
+        status_text.empty()
+        st.error(f"❌ 范围下载失败: {str(e)}")
 
 
 if __name__ == "__main__":
