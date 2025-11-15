@@ -2,7 +2,7 @@
 Qwen Agent实现
 """
 import json
-import requests
+from openai import OpenAI
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
 import sys
@@ -29,6 +29,12 @@ class QwenAgent(BaseAgent):
         self.temperature = temperature
         self.conversation_history = []  # 对话历史
         
+        # 初始化OpenAI客户端
+        self.client = OpenAI(
+            base_url=api_base,
+            api_key=api_key
+        )
+        
         # 初始化系统提示词
         self.system_prompt = SYSTEM_PROMPT
     
@@ -43,29 +49,33 @@ class QwenAgent(BaseAgent):
         Returns:
             API响应
         """
-        url = f"{self.api_base}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-            "max_tokens": 2000
-        }
-        
-        # 如果提供了工具定义，添加到请求中
-        if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = "auto"
-        
         try:
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
+            # 设置extra_body参数
+            extra_body = {
+                "enable_thinking": False,  # 交易决策不需要thinking输出
+            }
+            
+            # 构造API调用参数
+            api_params = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": self.temperature,
+                "max_tokens": 2000,
+                "extra_body": extra_body
+            }
+            
+            # 如果提供了工具定义，添加到请求中
+            if tools:
+                api_params["tools"] = tools
+                api_params["tool_choice"] = "auto"
+            
+            # 调用API（非流式）
+            response = self.client.chat.completions.create(**api_params)
+            
+            # 转换为字典格式
+            return response.model_dump()
+            
+        except Exception as e:
             return {"error": f"API调用失败: {str(e)}"}
     
     def make_decision(self, 

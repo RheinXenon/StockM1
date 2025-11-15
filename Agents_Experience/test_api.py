@@ -1,7 +1,7 @@
 """
 测试Qwen API连接
 """
-import requests
+from openai import OpenAI
 from config import QWEN_API_BASE, QWEN_API_KEY, QWEN_MODEL
 
 
@@ -11,41 +11,56 @@ def test_api_connection():
     print(f"API地址: {QWEN_API_BASE}")
     print(f"模型: {QWEN_MODEL}\n")
     
-    url = f"{QWEN_API_BASE}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {QWEN_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": QWEN_MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": "请用一句话介绍你自己"
-            }
-        ],
-        "max_tokens": 100
-    }
-    
     try:
+        # 初始化OpenAI客户端
+        client = OpenAI(
+            base_url=QWEN_API_BASE,
+            api_key=QWEN_API_KEY
+        )
+        
+        # 设置extra_body参数以启用thinking功能
+        extra_body = {
+            "enable_thinking": True,
+        }
+        
         print("发送测试请求...")
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
         
-        result = response.json()
+        # 使用流式输出
+        response = client.chat.completions.create(
+            model=QWEN_MODEL,
+            messages=[
+                {
+                    'role': 'user',
+                    'content': '请用一句话介绍你自己'
+                }
+            ],
+            stream=True,
+            extra_body=extra_body
+        )
         
-        if "choices" in result and len(result["choices"]) > 0:
-            message = result["choices"][0]["message"]["content"]
-            print("✓ API连接成功！")
-            print(f"\n模型回复: {message}\n")
-            return True
-        else:
-            print("✗ API返回格式异常")
-            print(result)
-            return False
+        print("✓ API连接成功！\n")
+        
+        # 处理流式响应
+        done_thinking = False
+        full_response = ""
+        
+        for chunk in response:
+            thinking_chunk = chunk.choices[0].delta.reasoning_content
+            answer_chunk = chunk.choices[0].delta.content
             
-    except requests.exceptions.RequestException as e:
+            if thinking_chunk and thinking_chunk != '':
+                print(thinking_chunk, end='', flush=True)
+            elif answer_chunk and answer_chunk != '':
+                if not done_thinking:
+                    print('\n\n=== 模型回复 ===\n')
+                    done_thinking = True
+                print(answer_chunk, end='', flush=True)
+                full_response += answer_chunk
+        
+        print("\n")
+        return True
+            
+    except Exception as e:
         print(f"✗ API连接失败: {e}")
         return False
 
