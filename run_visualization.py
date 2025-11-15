@@ -4,6 +4,11 @@
 import os
 import sys
 import subprocess
+import warnings
+
+# 禁用所有警告
+warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
 
 if __name__ == '__main__':
     # 确保在项目根目录

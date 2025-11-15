@@ -2,11 +2,18 @@
 股票数据可视化主应用
 使用Streamlit构建交互式界面
 """
+import warnings
+warnings.filterwarnings('ignore')
+
 import streamlit as st
 import pandas as pd
 import sys
 import os
 from datetime import datetime, timedelta
+
+# 禁用Streamlit的弃用警告
+import logging
+logging.getLogger('streamlit').setLevel(logging.ERROR)
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,6 +28,13 @@ from visualization.charts import (
 from src.stock_app.data_downloader import DataDownloader
 from src.stock_app.database import Database
 import time
+
+# Plotly配置（避免警告）
+PLOTLY_CONFIG = {
+    'displayModeBar': True,
+    'displaylogo': False,
+    'modeBarButtonsToRemove': ['select2d', 'lasso2d']
+}
 
 # 页面配置
 st.set_page_config(
@@ -132,7 +146,7 @@ def show_stock_list_page():
     
     st.dataframe(
         display_df.iloc[start_idx:end_idx],
-        use_container_width=True,
+        width='stretch',
         hide_index=True
     )
     
@@ -262,32 +276,32 @@ def show_stock_detail_page():
     # 显示图表
     if chart_type == "组合图表":
         fig = create_combined_chart(df, symbol, stock_info['name'])
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     elif chart_type == "K线图":
         fig = create_candlestick_chart(df, f"{symbol} - {stock_info['name']} K线图")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     elif chart_type == "成交量":
         fig = create_volume_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     elif chart_type == "MACD":
         fig = create_macd_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     elif chart_type == "RSI":
         fig = create_rsi_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     elif chart_type == "KDJ":
         fig = create_kdj_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     elif chart_type == "布林带":
         fig = create_bollinger_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     elif chart_type == "收益率分析":
         fig = create_returns_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     
     # 数据表格
     with st.expander("📊 查看原始数据"):
-        st.dataframe(df.tail(100), use_container_width=True)
+        st.dataframe(df.tail(100), width='stretch')
 
 
 def show_comparison_page():
@@ -355,7 +369,7 @@ def show_comparison_page():
     # 对比图表
     st.subheader("价格走势对比（归一化）")
     fig = create_comparison_chart(data_dict, "股票价格对比")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
     
     # 统计对比表
     st.subheader("统计数据对比")
@@ -384,7 +398,7 @@ def show_comparison_page():
             })
     
     stats_df = pd.DataFrame(stats_data)
-    st.dataframe(stats_df, use_container_width=True, hide_index=True)
+    st.dataframe(stats_df, width='stretch', hide_index=True)
 
 
 def show_indicators_page():
@@ -432,7 +446,7 @@ def show_indicators_page():
         st.subheader("移动平均线 (MA)")
         st.write("移动平均线是最常用的技术指标，用于判断趋势方向。")
         fig = create_candlestick_chart(df, f"{symbol} K线与MA", show_ma=True)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
         
         # 最新MA值
         col1, col2, col3, col4 = st.columns(4)
@@ -453,7 +467,7 @@ def show_indicators_page():
         st.subheader("MACD指标")
         st.write("MACD是趋势跟踪动量指标，用于判断买卖时机。")
         fig = create_macd_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
         
         # 最新MACD值
         if 'MACD' in df.columns:
@@ -469,7 +483,7 @@ def show_indicators_page():
         st.subheader("RSI指标")
         st.write("RSI用于衡量市场超买超卖状态，取值0-100。")
         fig = create_rsi_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
         
         # RSI分析
         if 'RSI' in df.columns:
@@ -489,7 +503,7 @@ def show_indicators_page():
         st.subheader("KDJ指标")
         st.write("KDJ是随机指标，用于判断超买超卖。")
         fig = create_kdj_chart(df)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
         
         # KDJ值
         if 'K' in df.columns:
@@ -585,7 +599,7 @@ def show_statistics_page():
             labels={'daily_return': '日收益率', 'count': '频数'}
         )
         fig.update_traces(marker_color='lightblue', marker_line_color='darkblue', marker_line_width=1)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch', config=PLOTLY_CONFIG)
 
 
 def get_cached_stock_list(db, downloader, force_refresh=False):
@@ -714,7 +728,7 @@ def show_single_download_section(downloader, db, start_date, end_date, interval)
     with col2:
         st.write("")
         st.write("")
-        if st.button("🚀 开始下载", type="primary", use_container_width=True):
+        if st.button("🚀 开始下载", type="primary", width='stretch'):
             if not stock_symbol:
                 st.error("❌ 请输入股票代码")
             else:
@@ -753,7 +767,7 @@ def show_search_download_section(downloader, db, start_date, end_date, interval)
                             'code': '股票代码',
                             'name': '股票名称'
                         })
-                        st.dataframe(display_df, use_container_width=True, hide_index=True)
+                        st.dataframe(display_df, width='stretch', hide_index=True)
                         
                         # 下载选项
                         col1, col2 = st.columns(2)
@@ -867,7 +881,7 @@ def download_single_stock(downloader, db, symbol, start_date, end_date):
             
             # 显示数据预览
             with st.expander("查看数据预览"):
-                st.dataframe(df.head(10), use_container_width=True)
+                st.dataframe(df.head(10), width='stretch')
         else:
             progress_bar.progress(100)
             status_text.empty()
