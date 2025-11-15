@@ -1,0 +1,303 @@
+"""
+数据库管理模块
+"""
+import sqlite3
+import pandas as pd
+from typing import Optional, List
+from datetime import datetime
+import config
+
+
+class Database:
+    """数据库管理类"""
+    
+    def __init__(self, db_path: str = config.DATABASE_PATH):
+        self.db_path = db_path
+        self.conn = None
+        self.init_database()
+    
+    def connect(self):
+        """连接数据库"""
+        if self.conn is None:
+            self.conn = sqlite3.connect(self.db_path)
+        return self.conn
+    
+    def close(self):
+        """关闭数据库连接"""
+        if self.conn:
+            self.conn.close()
+            self.conn = None
+    
+    def init_database(self):
+        """初始化数据库表结构"""
+        conn = self.connect()
+        cursor = conn.cursor()
+        
+        # 股票基本信息表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS stock_info (
+                symbol TEXT PRIMARY KEY,
+                name TEXT,
+                market TEXT,
+                updated_at TEXT
+            )
+        ''')
+        
+        # 股票日线数据表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS stock_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                date TEXT NOT NULL,
+                open REAL,
+                close REAL,
+                high REAL,
+                low REAL,
+                volume REAL,
+                amount REAL,
+                pct_change REAL,
+                UNIQUE(symbol, date)
+            )
+        ''')
+        
+        # 指数日线数据表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS index_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                date TEXT NOT NULL,
+                open REAL,
+                close REAL,
+                high REAL,
+                low REAL,
+                volume REAL,
+                UNIQUE(symbol, date)
+            )
+        ''')
+        
+        # 模拟账户表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS account (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                initial_capital REAL NOT NULL,
+                current_capital REAL NOT NULL,
+                current_date TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        ''')
+        
+        # 持仓表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                avg_cost REAL NOT NULL,
+                current_price REAL,
+                updated_at TEXT,
+                FOREIGN KEY (account_id) REFERENCES account(id),
+                UNIQUE(account_id, symbol)
+            )
+        ''')
+        
+        # 交易记录表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                trade_date TEXT NOT NULL,
+                trade_type TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                price REAL NOT NULL,
+                commission REAL NOT NULL,
+                stamp_tax REAL NOT NULL,
+                total_amount REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (account_id) REFERENCES account(id)
+            )
+        ''')
+        
+        # 创建索引
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_symbol ON stock_daily(symbol)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_date ON stock_daily(date)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_daily_symbol ON index_daily(symbol)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_daily_date ON index_daily(date)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)')
+        
+        conn.commit()
+    
+    def save_stock_info(self, stock_list: pd.DataFrame):
+        """保存股票基本信息"""
+        conn = self.connect()
+        
+        for _, row in stock_list.iterrows():
+            conn.execute('''
+                INSERT OR REPLACE INTO stock_info (symbol, name, market, updated_at)
+                VALUES (?, ?, ?, ?)
+            ''', (row['code'], row['name'], 'A股', datetime.now().isoformat()))
+        
+        conn.commit()
+    
+    def save_stock_daily_data(self, symbol: str, df: pd.DataFrame):
+        """保存股票日线数据"""
+        if df.empty:
+            return
+        
+        conn = self.connect()
+        
+        for _, row in df.iterrows():
+            try:
+                conn.execute('''
+                    INSERT OR REPLACE INTO stock_daily 
+                    (symbol, date, open, close, high, low, volume, amount, pct_change)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    symbol,
+                    row.get('date', ''),
+                    float(row.get('open', 0)),
+                    float(row.get('close', 0)),
+                    float(row.get('high', 0)),
+                    float(row.get('low', 0)),
+                    float(row.get('volume', 0)),
+                    float(row.get('amount', 0)),
+                    float(row.get('pct_change', 0))
+                ))
+            except Exception as e:
+                print(f"保存数据失败 {symbol} {row.get('date')}: {e}")
+                continue
+        
+        conn.commit()
+    
+    def save_index_daily_data(self, symbol: str, df: pd.DataFrame):
+        """保存指数日线数据"""
+        if df.empty:
+            return
+        
+        conn = self.connect()
+        
+        for _, row in df.iterrows():
+            try:
+                conn.execute('''
+                    INSERT OR REPLACE INTO index_daily 
+                    (symbol, date, open, close, high, low, volume)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    symbol,
+                    row.get('date', ''),
+                    float(row.get('open', 0)),
+                    float(row.get('close', 0)),
+                    float(row.get('high', 0)),
+                    float(row.get('low', 0)),
+                    float(row.get('volume', 0))
+                ))
+            except Exception as e:
+                print(f"保存指数数据失败 {symbol} {row.get('date')}: {e}")
+                continue
+        
+        conn.commit()
+    
+    def get_stock_data(self, 
+                       symbol: str, 
+                       start_date: Optional[str] = None,
+                       end_date: Optional[str] = None) -> pd.DataFrame:
+        """
+        获取股票历史数据
+        
+        Args:
+            symbol: 股票代码
+            start_date: 开始日期（YYYY-MM-DD）
+            end_date: 结束日期（YYYY-MM-DD）
+        """
+        conn = self.connect()
+        
+        query = 'SELECT * FROM stock_daily WHERE symbol = ?'
+        params = [symbol]
+        
+        if start_date:
+            query += ' AND date >= ?'
+            params.append(start_date)
+        
+        if end_date:
+            query += ' AND date <= ?'
+            params.append(end_date)
+        
+        query += ' ORDER BY date'
+        
+        df = pd.read_sql_query(query, conn, params=params)
+        return df
+    
+    def get_stock_price_on_date(self, symbol: str, date: str) -> Optional[dict]:
+        """获取某只股票在特定日期的价格信息"""
+        conn = self.connect()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT open, close, high, low, volume
+            FROM stock_daily
+            WHERE symbol = ? AND date = ?
+        ''', (symbol, date))
+        
+        result = cursor.fetchone()
+        if result:
+            return {
+                'open': result[0],
+                'close': result[1],
+                'high': result[2],
+                'low': result[3],
+                'volume': result[4]
+            }
+        return None
+    
+    def get_available_dates(self, symbol: str) -> List[str]:
+        """获取某只股票的所有可用交易日期"""
+        conn = self.connect()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT DISTINCT date FROM stock_daily
+            WHERE symbol = ?
+            ORDER BY date
+        ''', (symbol,))
+        
+        return [row[0] for row in cursor.fetchall()]
+    
+    def get_all_stocks(self) -> pd.DataFrame:
+        """获取所有股票列表"""
+        conn = self.connect()
+        return pd.read_sql_query('SELECT * FROM stock_info', conn)
+    
+    def get_stocks_with_data_count(self) -> pd.DataFrame:
+        """获取股票列表及其数据条数"""
+        conn = self.connect()
+        query = '''
+            SELECT si.symbol, si.name, COUNT(sd.id) as data_count
+            FROM stock_info si
+            LEFT JOIN stock_daily sd ON si.symbol = sd.symbol
+            GROUP BY si.symbol, si.name
+            ORDER BY data_count DESC
+        '''
+        return pd.read_sql_query(query, conn)
+
+    def get_all_stock_daily(self) -> pd.DataFrame:
+        """获取所有股票的日线数据（包含名称）"""
+        conn = self.connect()
+        query = '''
+            SELECT 
+                sd.symbol,
+                COALESCE(si.name, sd.symbol) AS name,
+                sd.date,
+                sd.open,
+                sd.close,
+                sd.high,
+                sd.low,
+                sd.volume,
+                sd.amount,
+                sd.pct_change
+            FROM stock_daily sd
+            LEFT JOIN stock_info si ON sd.symbol = si.symbol
+            ORDER BY sd.symbol, sd.date
+        '''
+        return pd.read_sql_query(query, conn)
