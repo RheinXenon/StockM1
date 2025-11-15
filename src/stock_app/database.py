@@ -180,11 +180,18 @@ class Database:
         conn.commit()
     
     def save_index_daily_data(self, symbol: str, df: pd.DataFrame):
-        """保存指数日线数据"""
+        """
+        保存指数日线数据
+        注意：为避免与股票代码冲突，指数代码会自动添加99前缀
+        例如：000001 -> 99000001, 399001 -> 99399001
+        """
         if df.empty:
             return
         
         conn = self.connect()
+        
+        # 添加99前缀避免与股票代码冲突
+        index_symbol = f"99{symbol}"
         
         for _, row in df.iterrows():
             try:
@@ -193,7 +200,7 @@ class Database:
                     (symbol, date, open, close, high, low, volume)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    symbol,
+                    index_symbol,  # 使用添加前缀后的代码
                     row.get('date', ''),
                     float(row.get('open', 0)),
                     float(row.get('close', 0)),
@@ -202,7 +209,7 @@ class Database:
                     float(row.get('volume', 0))
                 ))
             except Exception as e:
-                print(f"保存指数数据失败 {symbol} {row.get('date')}: {e}")
+                print(f"保存指数数据失败 {index_symbol} {row.get('date')}: {e}")
                 continue
         
         conn.commit()
@@ -346,3 +353,49 @@ class Database:
             ORDER BY sd.symbol, sd.trade_date
         '''
         return pd.read_sql_query(query, conn)
+    
+    def get_index_data(self,
+                      symbol: str,
+                      start_date: Optional[str] = None,
+                      end_date: Optional[str] = None) -> pd.DataFrame:
+        """
+        获取指数历史数据
+        
+        Args:
+            symbol: 指数原始代码（如：000001, 399001），会自动添加99前缀查询
+            start_date: 开始日期（YYYY-MM-DD）
+            end_date: 结束日期（YYYY-MM-DD）
+        
+        Returns:
+            DataFrame with columns: date, open, high, low, close, volume
+        """
+        conn = self.connect()
+        
+        # 添加99前缀以匹配数据库中的存储格式
+        index_symbol = f"99{symbol}"
+        
+        query = '''
+            SELECT 
+                date,
+                open,
+                close,
+                high,
+                low,
+                volume
+            FROM index_daily
+            WHERE symbol = ?
+        '''
+        params = [index_symbol]
+        
+        if start_date:
+            query += ' AND date >= ?'
+            params.append(start_date)
+        
+        if end_date:
+            query += ' AND date <= ?'
+            params.append(end_date)
+        
+        query += ' ORDER BY date'
+        
+        df = pd.read_sql_query(query, conn, params=params)
+        return df
