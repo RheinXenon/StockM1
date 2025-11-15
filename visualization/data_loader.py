@@ -1,5 +1,6 @@
 """
 数据加载模块 - 从数据库加载股票数据
+优化版本：添加了缓存机制和查询优化
 """
 import sys
 import os
@@ -7,6 +8,7 @@ import pandas as pd
 import sqlite3
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,30 +20,64 @@ class StockDataLoader:
     
     def __init__(self, db_path: str = config.DATABASE_PATH):
         self.db_path = db_path
+        self._cache = {}  # 简单的内存缓存
         
     def get_connection(self):
-        """获取数据库连接"""
-        return sqlite3.connect(self.db_path)
+        """获取数据库连接（支持超时和只读优化）"""
+        return sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
     
-    def get_all_stocks(self) -> pd.DataFrame:
-        """获取所有股票列表"""
+    def get_all_stocks(self, limit: Optional[int] = None, offset: int = 0) -> pd.DataFrame:
+        """
+        获取所有股票列表（优化版本，支持分页）
+        
+        Args:
+            limit: 限制返回数量，None表示返回全部
+            offset: 偏移量
+        """
+        cache_key = f'all_stocks_{limit}_{offset}'
+        if cache_key in self._cache:
+            return self._cache[cache_key].copy()
+            
         with self.get_connection() as conn:
+            # 使用子查询优化性能
             query = '''
-                SELECT si.symbol, si.name, si.market_type as market,
-                       COUNT(sd.id) as data_count,
-                       MIN(sd.trade_date) as start_date,
-                       MAX(sd.trade_date) as end_date
+                SELECT 
+                    si.symbol, 
+                    si.name, 
+                    si.market_type as market,
+                    COALESCE(stats.data_count, 0) as data_count,
+                    stats.start_date,
+                    stats.end_date
                 FROM stock_info si
-                LEFT JOIN stock_daily sd ON si.symbol = sd.symbol
-                GROUP BY si.symbol, si.name, si.market_type
-                HAVING data_count > 0
+                LEFT JOIN (
+                    SELECT 
+                        symbol,
+                        COUNT(*) as data_count,
+                        MIN(trade_date) as start_date,
+                        MAX(trade_date) as end_date
+                    FROM stock_daily
+                    GROUP BY symbol
+                ) stats ON si.symbol = stats.symbol
+                WHERE stats.data_count > 0
                 ORDER BY si.symbol
             '''
+            if limit:
+                query += f' LIMIT {limit} OFFSET {offset}'
+            
             df = pd.read_sql_query(query, conn)
+            self._cache[cache_key] = df.copy()
             return df
     
+    def clear_cache(self):
+        """清除缓存"""
+        self._cache.clear()
+    
     def get_stock_info(self, symbol: str) -> Optional[Dict]:
-        """获取股票基本信息"""
+        """获取股票基本信息（添加缓存）"""
+        cache_key = f'info_{symbol}'
+        if cache_key in self._cache:
+            return self._cache[cache_key].copy()
+            
         with self.get_connection() as conn:
             query = '''
                 SELECT si.symbol, si.name, si.market_type as market,
@@ -60,7 +96,7 @@ class StockDataLoader:
             result = cursor.fetchone()
             
             if result:
-                return {
+                info = {
                     'symbol': result[0],
                     'name': result[1] or symbol,
                     'market': result[2],
@@ -70,6 +106,8 @@ class StockDataLoader:
                     'avg_volume': result[6],
                     'avg_amount': result[7]
                 }
+                self._cache[cache_key] = info.copy()
+                return info
             return None
     
     def get_stock_daily_data(self, 
@@ -77,13 +115,17 @@ class StockDataLoader:
                             start_date: Optional[str] = None,
                             end_date: Optional[str] = None) -> pd.DataFrame:
         """
-        获取股票日线数据
+        获取股票日线数据（优化版本，添加缓存）
         
         Args:
             symbol: 股票代码
             start_date: 开始日期（YYYY-MM-DD）
             end_date: 结束日期（YYYY-MM-DD）
         """
+        cache_key = f'daily_{symbol}_{start_date}_{end_date}'
+        if cache_key in self._cache:
+            return self._cache[cache_key].copy()
+            
         with self.get_connection() as conn:
             query = '''
                 SELECT 
@@ -114,6 +156,8 @@ class StockDataLoader:
             
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date'])
+                # 缓存结果
+                self._cache[cache_key] = df.copy()
             
             return df
     
@@ -199,22 +243,50 @@ class StockDataLoader:
                 }
             return None
     
-    def search_stocks(self, keyword: str) -> pd.DataFrame:
-        """搜索股票（按代码或名称）"""
+    def search_stocks(self, keyword: str, limit: int = 100) -> pd.DataFrame:
+        """
+        搜索股票（按代码或名称）- 优化版本
+        
+        Args:
+            keyword: 搜索关键词
+            limit: 最大返回数量
+        """
+        cache_key = f'search_{keyword}_{limit}'
+        if cache_key in self._cache:
+            return self._cache[cache_key].copy()
+            
         with self.get_connection() as conn:
+            # 优化搜索查询，使用子查询减少JOIN开销
             query = '''
-                SELECT si.symbol, si.name, si.market_type as market,
-                       COUNT(sd.id) as data_count
+                SELECT 
+                    si.symbol, 
+                    si.name, 
+                    si.market_type as market,
+                    COALESCE(stats.data_count, 0) as data_count
                 FROM stock_info si
-                LEFT JOIN stock_daily sd ON si.symbol = sd.symbol
-                WHERE si.symbol LIKE ? OR si.name LIKE ?
-                GROUP BY si.symbol, si.name, si.market_type
-                HAVING data_count > 0
-                ORDER BY si.symbol
-                LIMIT 50
+                LEFT JOIN (
+                    SELECT symbol, COUNT(*) as data_count
+                    FROM stock_daily
+                    GROUP BY symbol
+                ) stats ON si.symbol = stats.symbol
+                WHERE (si.symbol LIKE ? OR si.name LIKE ?)
+                  AND stats.data_count > 0
+                ORDER BY 
+                    CASE 
+                        WHEN si.symbol = ? THEN 0
+                        WHEN si.symbol LIKE ? THEN 1
+                        ELSE 2
+                    END,
+                    si.symbol
+                LIMIT ?
             '''
             search_pattern = f'%{keyword}%'
-            df = pd.read_sql_query(query, conn, params=[search_pattern, search_pattern])
+            like_start = f'{keyword}%'
+            df = pd.read_sql_query(
+                query, conn, 
+                params=[search_pattern, search_pattern, keyword, like_start, limit]
+            )
+            self._cache[cache_key] = df.copy()
             return df
     
     def get_index_data(self, symbol: str,

@@ -44,12 +44,57 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 初始化数据加载器
+# 初始化数据加载器（使用缓存）
 @st.cache_resource
 def get_data_loader():
     return StockDataLoader()
 
 data_loader = get_data_loader()
+
+# 添加缓存装饰器优化数据查询
+@st.cache_data(ttl=300)  # 5分钟缓存
+def get_cached_stocks_list(limit=None, offset=0):
+    """\u7f13\u5b58\u80a1\u7968\u5217\u8868\u67e5\u8be2"""
+    return data_loader.get_all_stocks(limit=limit, offset=offset)
+
+@st.cache_data(ttl=300)
+def get_cached_stock_info(symbol):
+    """\u7f13\u5b58\u80a1\u7968\u4fe1\u606f\u67e5\u8be2"""
+    return data_loader.get_stock_info(symbol)
+
+@st.cache_data(ttl=300)
+def get_cached_stock_data(symbol, start_date, end_date):
+    """\u7f13\u5b58\u80a1\u7968\u6570\u636e\u67e5\u8be2"""
+    return data_loader.get_stock_daily_data(symbol, start_date, end_date)
+
+@st.cache_data(ttl=300)
+def get_cached_search_results(keyword):
+    """\u7f13\u5b58\u641c\u7d22\u7ed3\u679c"""
+    return data_loader.search_stocks(keyword)
+
+@st.cache_data(ttl=300)
+def get_cached_latest_price(symbol):
+    """\u7f13\u5b58\u6700\u65b0\u4ef7\u683c"""
+    return data_loader.get_latest_price(symbol)
+
+@st.cache_data(ttl=300)
+def get_cached_multiple_stocks(symbols, start_date, end_date):
+    """\u7f13\u5b58\u591a\u80a1\u7968\u6570\u636e"""
+    return data_loader.get_multiple_stocks_data(symbols, start_date, end_date)
+
+@st.cache_data(ttl=300)
+def get_cached_statistics(symbol, days):
+    """\u7f13\u5b58\u7edf\u8ba1\u6570\u636e"""
+    return data_loader.get_stock_statistics(symbol, days)
+
+@st.cache_data(ttl=300)
+def get_cached_indicators(df, symbol, start_date, end_date):
+    """\u7f13\u5b58\u6280\u672f\u6307\u6807\u8ba1\u7b97\u7ed3\u679c"""
+    df_copy = df.copy()
+    df_copy = calculate_all_indicators(df_copy)
+    df_copy = calculate_returns(df_copy)
+    df_copy = calculate_volatility(df_copy)
+    return df_copy
 
 
 def main():
@@ -79,7 +124,7 @@ def main():
 
 
 def show_stock_list_page():
-    """显示股票列表页面"""
+    """显示股票列表页面（优化版本）"""
     st.header("股票列表")
     
     # 搜索栏
@@ -87,11 +132,13 @@ def show_stock_list_page():
     with col1:
         search_keyword = st.text_input("🔍 搜索股票（代码或名称）", "")
     
-    # 获取股票列表
-    if search_keyword:
-        stocks_df = data_loader.search_stocks(search_keyword)
-    else:
-        stocks_df = data_loader.get_all_stocks()
+    # 获取股票列表（使用缓存）
+    with st.spinner('加载数据中...'):
+        if search_keyword:
+            stocks_df = get_cached_search_results(search_keyword)
+        else:
+            # 分页加载，默认加载前500只
+            stocks_df = get_cached_stocks_list(limit=500, offset=0)
     
     if stocks_df.empty:
         st.warning("暂无股票数据，请先使用命令行工具下载数据。")
@@ -154,7 +201,7 @@ def show_stock_list_page():
 
 
 def show_stock_detail_page():
-    """显示股票详细分析页面"""
+    """显示股票详细分析页面（优化版本）"""
     st.header("股票详细分析")
     
     # 股票选择
@@ -164,10 +211,12 @@ def show_stock_detail_page():
         # 搜索股票
         search_keyword = st.text_input("🔍 搜索股票", "", key="detail_search")
         
-        if search_keyword:
-            stocks_df = data_loader.search_stocks(search_keyword)
-        else:
-            stocks_df = data_loader.get_all_stocks().head(100)
+        with st.spinner('搜索中...'):
+            if search_keyword:
+                stocks_df = get_cached_search_results(search_keyword)
+            else:
+                # 限制加载100只股票，避免加载过多
+                stocks_df = get_cached_stocks_list(limit=100, offset=0)
         
         if stocks_df.empty:
             st.warning("未找到股票数据")
@@ -195,8 +244,8 @@ def show_stock_detail_page():
             index=3
         )
     
-    # 获取股票信息
-    stock_info = data_loader.get_stock_info(symbol)
+    # 获取股票信息（使用缓存）
+    stock_info = get_cached_stock_info(symbol)
     if not stock_info:
         st.error(f"未找到股票 {symbol} 的信息")
         return
@@ -226,23 +275,22 @@ def show_stock_detail_page():
     start_date_str = start_date.strftime('%Y-%m-%d') if start_date else None
     end_date_str = end_date.strftime('%Y-%m-%d') if isinstance(end_date, datetime) else end_date.strftime('%Y-%m-%d')
     
-    # 获取股票数据
-    df = data_loader.get_stock_daily_data(symbol, start_date_str, end_date_str)
+    # 获取股票数据（使用缓存）
+    with st.spinner(f'加载 {symbol} 数据中...'):
+        df = get_cached_stock_data(symbol, start_date_str, end_date_str)
     
     if df.empty:
         st.warning(f"股票 {symbol} 暂无数据")
         return
     
-    # 计算技术指标
-    df = calculate_all_indicators(df)
-    df = calculate_returns(df)
-    df = calculate_volatility(df)
+    # 计算技术指标（缓存计算结果）
+    df = get_cached_indicators(df, symbol, start_date_str, end_date_str)
     
     # 显示股票基本信息
     st.subheader(f"{symbol} - {stock_info['name']}")
     
-    # 最新价格信息
-    latest = data_loader.get_latest_price(symbol)
+    # 最新价格信息（使用缓存）
+    latest = get_cached_latest_price(symbol)
     if latest:
         col1, col2, col3, col4, col5, col6 = st.columns(6)
         
@@ -305,13 +353,14 @@ def show_stock_detail_page():
 
 
 def show_comparison_page():
-    """显示多股票对比页面"""
+    """显示多股票对比页面（优化版本）"""
     st.header("多股票对比分析")
     
     st.info("💡 选择多只股票进行对比分析，可以查看相对表现和收益率对比。")
     
-    # 股票选择
-    stocks_df = data_loader.get_all_stocks()
+    # 股票选择（限制加载数量）
+    with st.spinner('加载股票列表...'):
+        stocks_df = get_cached_stocks_list(limit=500, offset=0)
     
     if stocks_df.empty:
         st.warning("暂无股票数据")
@@ -359,8 +408,9 @@ def show_comparison_page():
     start_date_str = start_date.strftime('%Y-%m-%d')
     end_date_str = end_date.strftime('%Y-%m-%d')
     
-    # 获取数据
-    data_dict = data_loader.get_multiple_stocks_data(symbols, start_date_str, end_date_str)
+    # 获取数据（使用缓存）
+    with st.spinner(f'加载 {len(symbols)} 只股票数据...'):
+        data_dict = get_cached_multiple_stocks(tuple(symbols), start_date_str, end_date_str)
     
     if not data_dict:
         st.warning("未找到数据")
@@ -377,7 +427,7 @@ def show_comparison_page():
     stats_data = []
     for symbol, df in data_dict.items():
         if not df.empty:
-            stock_info = data_loader.get_stock_info(symbol)
+            stock_info = get_cached_stock_info(symbol)
             name = stock_info['name'] if stock_info else symbol
             
             # 计算统计数据
@@ -402,11 +452,12 @@ def show_comparison_page():
 
 
 def show_indicators_page():
-    """显示技术指标分析页面"""
+    """显示技术指标分析页面（优化版本）"""
     st.header("技术指标分析")
     
-    # 股票选择
-    stocks_df = data_loader.get_all_stocks().head(100)
+    # 股票选择（使用缓存）
+    with st.spinner('加载股票列表...'):
+        stocks_df = get_cached_stocks_list(limit=100, offset=0)
     
     if stocks_df.empty:
         st.warning("暂无股票数据")
@@ -426,18 +477,19 @@ def show_indicators_page():
     with col2:
         days = st.selectbox("数据天数", [60, 120, 250, 500], index=2)
     
-    # 获取数据
+    # 获取数据（使用缓存）
     end_date = datetime.now().strftime('%Y-%m-%d')
     start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
     
-    df = data_loader.get_stock_daily_data(symbol, start_date, end_date)
+    with st.spinner(f'加载 {symbol} 数据中...'):
+        df = get_cached_stock_data(symbol, start_date, end_date)
     
     if df.empty:
         st.warning(f"股票 {symbol} 暂无数据")
         return
     
-    # 计算指标
-    df = calculate_all_indicators(df)
+    # 计算指标（使用缓存）
+    df = get_cached_indicators(df, symbol, start_date, end_date)
     
     # 显示不同指标
     tab1, tab2, tab3, tab4 = st.tabs(["移动平均线", "MACD", "RSI", "KDJ"])
@@ -517,11 +569,12 @@ def show_indicators_page():
 
 
 def show_statistics_page():
-    """显示统计分析页面"""
+    """显示统计分析页面（优化版本）"""
     st.header("统计分析")
     
-    # 股票选择
-    stocks_df = data_loader.get_all_stocks().head(100)
+    # 股票选择（使用缓存）
+    with st.spinner('加载股票列表...'):
+        stocks_df = get_cached_stocks_list(limit=100, offset=0)
     
     if stocks_df.empty:
         st.warning("暂无股票数据")
@@ -541,8 +594,9 @@ def show_statistics_page():
     with col1:
         period = st.selectbox("统计周期", [30, 60, 90, 180, 365], index=2)
     
-    # 获取统计数据
-    stats = data_loader.get_stock_statistics(symbol, period)
+    # 获取统计数据（使用缓存）
+    with st.spinner('计算统计数据...'):
+        stats = get_cached_statistics(symbol, period)
     
     if not stats:
         st.warning("暂无统计数据")
@@ -576,10 +630,10 @@ def show_statistics_page():
     with col4:
         st.metric("最大单日涨幅", f"{stats['max_pct_change']:.2f}%")
     
-    # 获取详细数据绘制分布图
+    # 获取详细数据绘制分布图（使用缓存）
     end_date = datetime.now().strftime('%Y-%m-%d')
     start_date = (datetime.now() - timedelta(days=period)).strftime('%Y-%m-%d')
-    df = data_loader.get_stock_daily_data(symbol, start_date, end_date)
+    df = get_cached_stock_data(symbol, start_date, end_date)
     
     if not df.empty:
         st.divider()

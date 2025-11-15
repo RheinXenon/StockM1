@@ -125,9 +125,12 @@ class Database:
             )
         ''')
         
-        # 创建索引
+        # 创建索引（优化性能）
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_symbol ON stock_daily(symbol)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_date ON stock_daily(date)')
+        # 添加复合索引用于快速查询
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_daily_symbol_date ON stock_daily(symbol, date)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_stock_info_name ON stock_info(name)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_daily_symbol ON index_daily(symbol)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_daily_date ON index_daily(date)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)')
