@@ -27,13 +27,13 @@ class StockDataLoader:
         """获取所有股票列表"""
         with self.get_connection() as conn:
             query = '''
-                SELECT si.symbol, si.name, si.market,
+                SELECT si.symbol, si.name, si.market_type as market,
                        COUNT(sd.id) as data_count,
-                       MIN(sd.date) as start_date,
-                       MAX(sd.date) as end_date
+                       MIN(sd.trade_date) as start_date,
+                       MAX(sd.trade_date) as end_date
                 FROM stock_info si
                 LEFT JOIN stock_daily sd ON si.symbol = sd.symbol
-                GROUP BY si.symbol, si.name, si.market
+                GROUP BY si.symbol, si.name, si.market_type
                 HAVING data_count > 0
                 ORDER BY si.symbol
             '''
@@ -44,16 +44,16 @@ class StockDataLoader:
         """获取股票基本信息"""
         with self.get_connection() as conn:
             query = '''
-                SELECT si.symbol, si.name, si.market,
+                SELECT si.symbol, si.name, si.market_type as market,
                        COUNT(sd.id) as data_count,
-                       MIN(sd.date) as start_date,
-                       MAX(sd.date) as end_date,
+                       MIN(sd.trade_date) as start_date,
+                       MAX(sd.trade_date) as end_date,
                        AVG(sd.volume) as avg_volume,
                        AVG(sd.amount) as avg_amount
                 FROM stock_info si
                 LEFT JOIN stock_daily sd ON si.symbol = sd.symbol
                 WHERE si.symbol = ?
-                GROUP BY si.symbol, si.name, si.market
+                GROUP BY si.symbol, si.name, si.market_type
             '''
             cursor = conn.cursor()
             cursor.execute(query, (symbol,))
@@ -62,7 +62,7 @@ class StockDataLoader:
             if result:
                 return {
                     'symbol': result[0],
-                    'name': result[1],
+                    'name': result[1] or symbol,
                     'market': result[2],
                     'data_count': result[3],
                     'start_date': result[4],
@@ -85,18 +85,30 @@ class StockDataLoader:
             end_date: 结束日期（YYYY-MM-DD）
         """
         with self.get_connection() as conn:
-            query = 'SELECT * FROM stock_daily WHERE symbol = ?'
+            query = '''
+                SELECT 
+                    trade_date as date,
+                    open_price as open,
+                    high_price as high,
+                    low_price as low,
+                    close_price as close,
+                    volume,
+                    amount,
+                    return_with_dividend as pct_change
+                FROM stock_daily 
+                WHERE symbol = ?
+            '''
             params = [symbol]
             
             if start_date:
-                query += ' AND date >= ?'
+                query += ' AND trade_date >= ?'
                 params.append(start_date)
             
             if end_date:
-                query += ' AND date <= ?'
+                query += ' AND trade_date <= ?'
                 params.append(end_date)
             
-            query += ' ORDER BY date'
+            query += ' ORDER BY trade_date'
             
             df = pd.read_sql_query(query, conn, params=params)
             
@@ -109,10 +121,11 @@ class StockDataLoader:
         """获取股票最新价格"""
         with self.get_connection() as conn:
             query = '''
-                SELECT date, open, close, high, low, volume, pct_change
+                SELECT trade_date, open_price, close_price, high_price, low_price, 
+                       volume, return_with_dividend
                 FROM stock_daily
                 WHERE symbol = ?
-                ORDER BY date DESC
+                ORDER BY trade_date DESC
                 LIMIT 1
             '''
             cursor = conn.cursor()
@@ -154,18 +167,18 @@ class StockDataLoader:
         with self.get_connection() as conn:
             query = '''
                 SELECT 
-                    AVG(close) as avg_close,
-                    MAX(high) as max_high,
-                    MIN(low) as min_low,
+                    AVG(close_price) as avg_close,
+                    MAX(high_price) as max_high,
+                    MIN(low_price) as min_low,
                     AVG(volume) as avg_volume,
                     SUM(volume) as total_volume,
-                    AVG(pct_change) as avg_pct_change,
-                    MAX(pct_change) as max_pct_change,
-                    MIN(pct_change) as min_pct_change
+                    AVG(return_with_dividend) as avg_pct_change,
+                    MAX(return_with_dividend) as max_pct_change,
+                    MIN(return_with_dividend) as min_pct_change
                 FROM (
                     SELECT * FROM stock_daily
                     WHERE symbol = ?
-                    ORDER BY date DESC
+                    ORDER BY trade_date DESC
                     LIMIT ?
                 )
             '''
@@ -190,12 +203,12 @@ class StockDataLoader:
         """搜索股票（按代码或名称）"""
         with self.get_connection() as conn:
             query = '''
-                SELECT si.symbol, si.name, si.market,
+                SELECT si.symbol, si.name, si.market_type as market,
                        COUNT(sd.id) as data_count
                 FROM stock_info si
                 LEFT JOIN stock_daily sd ON si.symbol = sd.symbol
                 WHERE si.symbol LIKE ? OR si.name LIKE ?
-                GROUP BY si.symbol, si.name, si.market
+                GROUP BY si.symbol, si.name, si.market_type
                 HAVING data_count > 0
                 ORDER BY si.symbol
                 LIMIT 50

@@ -215,21 +215,44 @@ class Database:
             symbol: 股票代码
             start_date: 开始日期（YYYY-MM-DD）
             end_date: 结束日期（YYYY-MM-DD）
+        
+        Returns:
+            DataFrame with columns: date, open, high, low, close, volume, amount, etc.
         """
         conn = self.connect()
         
-        query = 'SELECT * FROM stock_daily WHERE symbol = ?'
+        # 使用新的字段名，并重命名为兼容的格式
+        query = '''
+            SELECT 
+                trade_date as date,
+                open_price as open,
+                high_price as high,
+                low_price as low,
+                close_price as close,
+                volume,
+                amount,
+                return_with_dividend as pct_change,
+                market_cap_float,
+                market_cap_total,
+                adj_price_with_dividend,
+                market_type,
+                trade_status,
+                change_ratio,
+                limit_status
+            FROM stock_daily 
+            WHERE symbol = ?
+        '''
         params = [symbol]
         
         if start_date:
-            query += ' AND date >= ?'
+            query += ' AND trade_date >= ?'
             params.append(start_date)
         
         if end_date:
-            query += ' AND date <= ?'
+            query += ' AND trade_date <= ?'
             params.append(end_date)
         
-        query += ' ORDER BY date'
+        query += ' ORDER BY trade_date'
         
         df = pd.read_sql_query(query, conn, params=params)
         return df
@@ -240,9 +263,9 @@ class Database:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT open, close, high, low, volume
+            SELECT open_price, close_price, high_price, low_price, volume
             FROM stock_daily
-            WHERE symbol = ? AND date = ?
+            WHERE symbol = ? AND trade_date = ?
         ''', (symbol, date))
         
         result = cursor.fetchone()
@@ -262,9 +285,9 @@ class Database:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT DISTINCT date FROM stock_daily
+            SELECT DISTINCT trade_date FROM stock_daily
             WHERE symbol = ?
-            ORDER BY date
+            ORDER BY trade_date
         ''', (symbol,))
         
         return [row[0] for row in cursor.fetchall()]
@@ -307,16 +330,16 @@ class Database:
             SELECT 
                 sd.symbol,
                 COALESCE(si.name, sd.symbol) AS name,
-                sd.date,
-                sd.open,
-                sd.close,
-                sd.high,
-                sd.low,
+                sd.trade_date as date,
+                sd.open_price as open,
+                sd.close_price as close,
+                sd.high_price as high,
+                sd.low_price as low,
                 sd.volume,
                 sd.amount,
-                sd.pct_change
+                sd.return_with_dividend as pct_change
             FROM stock_daily sd
             LEFT JOIN stock_info si ON sd.symbol = si.symbol
-            ORDER BY sd.symbol, sd.date
+            ORDER BY sd.symbol, sd.trade_date
         '''
         return pd.read_sql_query(query, conn)
