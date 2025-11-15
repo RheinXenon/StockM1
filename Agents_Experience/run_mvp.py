@@ -21,8 +21,9 @@ def main():
     print("Agent股票交易模拟系统 - MVP版本")
     print("="*60 + "\n")
     
-    # 设置日志
-    logger = setup_logger('agent_qwen')
+    # 设置日志 - 使用真实模型名
+    model_name = config.QWEN_MODEL.replace(':', '_').replace('/', '_')  # 清理模型名中的特殊字符
+    logger = setup_logger(f'agent_{model_name}')
     logger.info("开始MVP测试")
     
     # 创建Qwen Agent
@@ -35,12 +36,14 @@ def main():
         model=config.QWEN_MODEL,
         temperature=config.TEMPERATURE,
         stock_pool=config.MVP_STOCK_POOL,
-        stock_names=config.STOCK_NAMES
+        stock_names=config.STOCK_NAMES,
+        api_call_interval=config.API_CALL_INTERVAL
     )
     print(f"✓ Agent初始化完成: {agent.name}")
     print(f"  模型: {config.QWEN_MODEL}")
     print(f"  温度: {config.TEMPERATURE}")
-    print(f"  股票池: {len(config.MVP_STOCK_POOL)}只股票\n")
+    print(f"  股票池: {len(config.MVP_STOCK_POOL)}只股票")
+    print(f"  API调用间隔: {config.API_CALL_INTERVAL}秒\n")
     
     # 创建模拟器
     print("初始化交易模拟器...")

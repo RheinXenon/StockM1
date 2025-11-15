@@ -2,6 +2,7 @@
 Qwen Agent实现
 """
 import json
+import time
 from openai import OpenAI
 from typing import Dict, List, Any, Optional
 from .base_agent import BaseAgent
@@ -23,13 +24,16 @@ class QwenAgent(BaseAgent):
                  model: str = "free:Qwen3-30B-A3B",
                  temperature: float = 0.7,
                  stock_pool: List[str] = None,
-                 stock_names: Dict[str, str] = None):
+                 stock_names: Dict[str, str] = None,
+                 api_call_interval: float = 2.0):
         super().__init__(agent_id, name)
         self.api_base = api_base
         self.api_key = api_key
         self.model = model
         self.temperature = temperature
         self.conversation_history = []  # 对话历史
+        self.api_call_interval = api_call_interval  # API调用间隔（秒）
+        self.last_api_call_time = 0  # 上次API调用时间
         
         # 初始化OpenAI客户端
         self.client = OpenAI(
@@ -60,6 +64,16 @@ class QwenAgent(BaseAgent):
             API响应
         """
         try:
+            # 速率限制：确保两次API调用之间有足够间隔
+            if self.api_call_interval > 0:
+                current_time = time.time()
+                time_since_last_call = current_time - self.last_api_call_time
+                if time_since_last_call < self.api_call_interval:
+                    sleep_time = self.api_call_interval - time_since_last_call
+                    print(f"  [速率限制] 等待 {sleep_time:.1f} 秒...")
+                    time.sleep(sleep_time)
+                self.last_api_call_time = time.time()
+            
             # 设置extra_body参数
             extra_body = {
                 "enable_thinking": False,  # 交易决策不需要thinking输出

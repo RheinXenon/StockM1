@@ -54,8 +54,10 @@ class TradingSimulator:
         self.trade_log = []
         self.daily_snapshots = []
         
-        # 初始化双日志系统
-        self.dual_logger = DualLogger(f"agent_{agent.agent_id}")
+        # 初始化双日志系统 - 使用真实模型名
+        model_name = getattr(agent, 'model', agent.agent_id)
+        model_name = model_name.replace(':', '_').replace('/', '_')  # 清理特殊字符
+        self.dual_logger = DualLogger(f"agent_{model_name}")
         
         # 交易成本配置
         self.commission_rate = 0.0003

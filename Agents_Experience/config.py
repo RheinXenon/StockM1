@@ -13,6 +13,9 @@ QWEN_API_BASE = os.getenv("QWEN_API_BASE", "https://api.suanli.cn/v1")
 QWEN_API_KEY = os.getenv("QWEN_API_KEY", "")
 QWEN_MODEL = os.getenv("QWEN_MODEL", "free:Qwen3-30B-A3B")
 
+# API调用速率限制（秒）
+API_CALL_INTERVAL = float(os.getenv("API_CALL_INTERVAL", "2"))
+
 # ============ 模拟交易配置 ============
 # MVP测试配置
 INITIAL_CAPITAL = 1000000  # 初始资金：100万
@@ -57,7 +60,7 @@ MAX_DECISIONS_PER_DAY = 1
 
 # ============ Agent配置 ============
 # LLM参数
-TEMPERATURE = 0.7  # 温度参数
+TEMPERATURE = 1.0  # 温度参数
 MAX_TOKENS = 2000  # 最大输出token数
 
 # 历史数据窗口（Agent可以看到的历史天数）
