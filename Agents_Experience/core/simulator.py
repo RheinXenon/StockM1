@@ -106,9 +106,27 @@ class TradingSimulator:
                 # 执行交易动作
                 self._execute_actions(current_date, decision['actions'])
                 
-                # 打印决策
-                print(f"\n决策分析: {decision.get('analysis', '')[:200]}")
-                print(f"决策理由: {decision.get('reasoning', '')[:200]}")
+                # 打印决策 - 改进输出格式
+                analysis = decision.get('analysis', '')
+                reasoning = decision.get('reasoning', '')
+                
+                print(f"\n决策分析:")
+                if analysis:
+                    # 输出完整分析，但每行限制在终端宽度内
+                    for line in analysis.split('\n'):
+                        if line.strip():
+                            print(f"  {line}")
+                else:
+                    print("  (无)")
+                
+                print(f"\n决策理由:")
+                if reasoning:
+                    # 输出完整理由
+                    for line in reasoning.split('\n'):
+                        if line.strip():
+                            print(f"  {line}")
+                else:
+                    print("  (无)")
             else:
                 # 即使决策失败也记录
                 self.dual_logger.log_decision(current_date, decision)

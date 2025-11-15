@@ -247,6 +247,8 @@ class QwenAgent(BaseAgent):
         Returns:
             解析后的决策
         """
+        import re
+        
         actions = []
         
         # 从工具调用中提取交易动作
@@ -273,32 +275,44 @@ class QwenAgent(BaseAgent):
             except:
                 pass
         
-        # 提取分析和理由
+        # 提取分析、决策和理由 - 使用更健壮的正则表达式
         analysis = ""
+        decision = ""
         reasoning = ""
         
-        # 简单解析（可以根据实际响应格式优化）
-        if "**分析**" in response_text or "分析：" in response_text:
-            parts = response_text.split("**决策**")
-            if len(parts) > 0:
-                analysis = parts[0].replace("**分析**", "").replace("分析：", "").strip()
+        # 尝试多种格式的标题匹配
+        # 匹配 **分析**、**分析**：、分析：、【分析】等格式
+        analysis_pattern = r'(?:\*{0,2}分析\*{0,2}|【分析】)[:：]?\s*(.*?)(?=(?:\*{0,2}决策\*{0,2}|【决策】|$))'
+        decision_pattern = r'(?:\*{0,2}决策\*{0,2}|【决策】)[:：]?\s*(.*?)(?=(?:\*{0,2}理由\*{0,2}|【理由】|$))'
+        reasoning_pattern = r'(?:\*{0,2}理由\*{0,2}|【理由】)[:：]?\s*(.*)'
         
-        if "**理由**" in response_text or "理由：" in response_text:
-            parts = response_text.split("**理由**")
-            if len(parts) > 1:
-                reasoning = parts[1].split("**")[0].replace("理由：", "").strip()
-            else:
-                parts = response_text.split("理由：")
-                if len(parts) > 1:
-                    reasoning = parts[1].strip()
+        # 提取分析
+        analysis_match = re.search(analysis_pattern, response_text, re.DOTALL | re.IGNORECASE)
+        if analysis_match:
+            analysis = analysis_match.group(1).strip()
         
-        # 如果没有明确的分析和理由，使用整个响应
-        if not analysis and not reasoning:
+        # 提取决策
+        decision_match = re.search(decision_pattern, response_text, re.DOTALL | re.IGNORECASE)
+        if decision_match:
+            decision = decision_match.group(1).strip()
+        
+        # 提取理由
+        reasoning_match = re.search(reasoning_pattern, response_text, re.DOTALL | re.IGNORECASE)
+        if reasoning_match:
+            reasoning = reasoning_match.group(1).strip()
+        
+        # 如果没有找到结构化内容，使用整个响应
+        if not analysis and not decision and not reasoning:
             analysis = response_text
             reasoning = response_text
         
+        # 合并分析和决策作为完整的分析内容
+        full_analysis = analysis
+        if decision:
+            full_analysis = f"{analysis}\n\n决策: {decision}" if analysis else decision
+        
         return {
             'actions': actions,
-            'analysis': analysis[:500],  # 限制长度
-            'reasoning': reasoning[:500]
+            'analysis': full_analysis,  # 不再限制长度
+            'reasoning': reasoning
         }
