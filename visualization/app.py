@@ -342,12 +342,13 @@ def show_stock_detail_page():
     
     st.divider()
     
-    # 指数选择
-    with st.expander("📊 添加指数对比（可选）", expanded=False):
+    # 指数选择（在侧边栏）
+    with st.sidebar:
+        st.subheader("📊 指数对比设置")
         selected_indices = st.multiselect(
-            "选择要对比的指数",
+            "选择指数进行对比",
             options=list(COMMON_INDICES.keys()),
-            format_func=lambda x: f"{x} - {COMMON_INDICES[x]}",
+            format_func=lambda x: f"{COMMON_INDICES[x]}",
             default=[],
             help="在收益率分析中显示指数对比",
             key="detail_indices"
@@ -441,24 +442,24 @@ def show_comparison_page():
     
     symbols = [stock_options[s] for s in selected_stocks]
     
-    # 日期范围和指数选择
-    col1, col2 = st.columns(2)
-    with col1:
-        date_range = st.selectbox(
-            "时间范围",
-            ["近1个月", "近3个月", "近6个月", "近1年", "近3年"],
-            index=2
-        )
-    
-    # 指数选择
-    st.subheader("📊 添加指数对比")
-    selected_indices = st.multiselect(
-        "选择要对比的指数（可选）",
-        options=list(COMMON_INDICES.keys()),
-        format_func=lambda x: f"{x} - {COMMON_INDICES[x]}",
-        default=[],
-        help="选择指数与股票进行对比分析"
+    # 日期范围选择
+    date_range = st.selectbox(
+        "时间范围",
+        ["近1个月", "近3个月", "近6个月", "近1年", "近3年"],
+        index=2
     )
+    
+    # 指数选择（在侧边栏）
+    with st.sidebar:
+        st.subheader("📊 指数对比设置")
+        selected_indices = st.multiselect(
+            "选择指数进行对比",
+            options=list(COMMON_INDICES.keys()),
+            format_func=lambda x: f"{COMMON_INDICES[x]}",
+            default=[],
+            help="选择指数与股票进行对比分析",
+            key="comparison_indices"
+        )
     
     # 计算日期
     end_date = datetime.now()
