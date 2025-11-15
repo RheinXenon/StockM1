@@ -5,6 +5,7 @@ import sqlite3
 import pandas as pd
 from typing import Optional, List
 from datetime import datetime
+import threading
 import config
 
 
@@ -13,20 +14,24 @@ class Database:
     
     def __init__(self, db_path: str = config.DATABASE_PATH):
         self.db_path = db_path
-        self.conn = None
+        self._local = threading.local()
         self.init_database()
     
     def connect(self):
-        """连接数据库"""
-        if self.conn is None:
-            self.conn = sqlite3.connect(self.db_path)
-        return self.conn
+        """连接数据库 - 每个线程使用独立的连接"""
+        if not hasattr(self._local, 'conn') or self._local.conn is None:
+            self._local.conn = sqlite3.connect(
+                self.db_path,
+                check_same_thread=False,
+                timeout=30.0
+            )
+        return self._local.conn
     
     def close(self):
-        """关闭数据库连接"""
-        if self.conn:
-            self.conn.close()
-            self.conn = None
+        """关闭当前线程的数据库连接"""
+        if hasattr(self._local, 'conn') and self._local.conn is not None:
+            self._local.conn.close()
+            self._local.conn = None
     
     def init_database(self):
         """初始化数据库表结构"""
@@ -268,6 +273,20 @@ class Database:
         """获取所有股票列表"""
         conn = self.connect()
         return pd.read_sql_query('SELECT * FROM stock_info', conn)
+    
+    def get_stock_list_for_download(self) -> pd.DataFrame:
+        """获取股票列表（用于下载页面，格式与API一致：code, name）"""
+        conn = self.connect()
+        df = pd.read_sql_query('SELECT symbol as code, name FROM stock_info ORDER BY symbol', conn)
+        return df
+    
+    def get_stock_list_count(self) -> int:
+        """获取股票列表数量"""
+        conn = self.connect()
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM stock_info')
+        result = cursor.fetchone()
+        return result[0] if result else 0
     
     def get_stocks_with_data_count(self) -> pd.DataFrame:
         """获取股票列表及其数据条数"""

@@ -588,6 +588,28 @@ def show_statistics_page():
         st.plotly_chart(fig, use_container_width=True)
 
 
+def get_cached_stock_list(db, downloader, force_refresh=False):
+    """获取股票列表（优先从数据库缓存，支持强制刷新）"""
+    if force_refresh:
+        # 强制从网络刷新
+        with st.spinner("正在从网络获取最新股票列表..."):
+            stock_list = downloader.get_stock_list()
+            if not stock_list.empty:
+                db.save_stock_info(stock_list)
+                st.success(f"✅ 成功刷新股票列表，共 {len(stock_list)} 只股票")
+            return stock_list
+    else:
+        # 优先从数据库获取
+        stock_list = db.get_stock_list_for_download()
+        if stock_list.empty:
+            # 数据库为空，从网络获取
+            with st.spinner("首次获取股票列表..."):
+                stock_list = downloader.get_stock_list()
+                if not stock_list.empty:
+                    db.save_stock_info(stock_list)
+        return stock_list
+
+
 def show_download_page():
     """显示股票下载页面"""
     st.header("⬇️ 下载股票数据")
@@ -600,6 +622,21 @@ def show_download_page():
         return DataDownloader(), Database()
     
     downloader, db = get_downloader_and_db()
+    
+    # 显示股票列表状态和刷新按钮
+    stock_count = db.get_stock_list_count()
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        if stock_count > 0:
+            st.info(f"📊 本地已缓存 {stock_count} 只股票信息")
+        else:
+            st.warning("⚠️ 本地暂无股票列表缓存，将在搜索或批量下载时自动获取")
+    with col2:
+        if st.button("🔄 刷新股票列表", help="从网络重新获取最新的股票列表"):
+            get_cached_stock_list(db, downloader, force_refresh=True)
+            st.rerun()
+    with col3:
+        pass  # 预留空间
     
     # 下载模式选择
     download_mode = st.radio(
@@ -700,7 +737,7 @@ def show_search_download_section(downloader, db, start_date, end_date, interval)
     if search_keyword:
         with st.spinner("正在搜索股票列表..."):
             try:
-                stock_list = downloader.get_stock_list()
+                stock_list = get_cached_stock_list(db, downloader)
                 if not stock_list.empty:
                     # 搜索匹配
                     matched = stock_list[
@@ -896,7 +933,7 @@ def download_batch_by_limit(downloader, db, start_date, end_date, interval, limi
     
     try:
         status_text.text("正在获取股票列表...")
-        stock_list = downloader.get_stock_list()
+        stock_list = get_cached_stock_list(db, downloader)
         
         if stock_list.empty:
             st.error("❌ 获取股票列表失败")
@@ -926,7 +963,7 @@ def download_batch_by_range(downloader, db, start_date, end_date, interval, star
     
     try:
         status_text.text("正在获取股票列表...")
-        stock_list = downloader.get_stock_list()
+        stock_list = get_cached_stock_list(db, downloader)
         
         if stock_list.empty:
             st.error("❌ 获取股票列表失败")
