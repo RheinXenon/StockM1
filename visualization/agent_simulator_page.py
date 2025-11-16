@@ -123,15 +123,26 @@ def show_configuration_section(config_manager: AgentConfigManager):
     # Tab 3: 系统提示词
     with tab3:
         st.markdown("### 系统提示词")
+        # 使用session state保存提示词状态
+        if 'reset_prompt' not in st.session_state:
+            st.session_state.reset_prompt = False
+        
+        # 如果点击了重置按钮，使用默认提示词
+        if st.session_state.reset_prompt:
+            prompt_value = config_manager._get_default_prompt()
+            st.session_state.reset_prompt = False
+        else:
+            prompt_value = config['system_prompt']
+        
         system_prompt = st.text_area(
             "自定义系统提示词",
-            value=config['system_prompt'],
+            value=prompt_value,
             height=300,
             help="定义Agent的角色、目标和交易策略"
         )
         
         if st.button("🔄 恢复默认提示词"):
-            system_prompt = config_manager._get_default_prompt()
+            st.session_state.reset_prompt = True
             st.rerun()
     
     # Tab 4: 交易设置
