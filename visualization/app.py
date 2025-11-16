@@ -174,8 +174,8 @@ def show_stock_list_page():
         if search_keyword:
             stocks_df = get_cached_search_results(search_keyword)
         else:
-            # 分页加载，默认加载前500只
-            stocks_df = get_cached_stocks_list(limit=500, offset=0)
+            # 加载所有股票（使用缓存优化）
+            stocks_df = get_cached_stocks_list(limit=None, offset=0)
     
     if stocks_df.empty:
         st.warning("暂无股票数据，请先使用命令行工具下载数据。")
@@ -252,8 +252,8 @@ def show_stock_detail_page():
             if search_keyword:
                 stocks_df = get_cached_search_results(search_keyword)
             else:
-                # 限制加载100只股票，避免加载过多
-                stocks_df = get_cached_stocks_list(limit=100, offset=0)
+                # 加载所有股票（使用缓存优化）
+                stocks_df = get_cached_stocks_list(limit=None, offset=0)
         
         if stocks_df.empty:
             st.warning("未找到股票数据")
@@ -426,9 +426,9 @@ def show_comparison_page():
     
     st.info("💡 选择多只股票进行对比分析，可以查看相对表现和收益率对比。")
     
-    # 股票选择（限制加载数量）
+    # 股票选择（使用缓存优化）
     with st.spinner('加载股票列表...'):
-        stocks_df = get_cached_stocks_list(limit=500, offset=0)
+        stocks_df = get_cached_stocks_list(limit=None, offset=0)
     
     if stocks_df.empty:
         st.warning("暂无股票数据")
@@ -547,7 +547,7 @@ def show_indicators_page():
     
     # 股票选择（使用缓存）
     with st.spinner('加载股票列表...'):
-        stocks_df = get_cached_stocks_list(limit=100, offset=0)
+        stocks_df = get_cached_stocks_list(limit=None, offset=0)
     
     if stocks_df.empty:
         st.warning("暂无股票数据")
@@ -664,7 +664,7 @@ def show_statistics_page():
     
     # 股票选择（使用缓存）
     with st.spinner('加载股票列表...'):
-        stocks_df = get_cached_stocks_list(limit=100, offset=0)
+        stocks_df = get_cached_stocks_list(limit=None, offset=0)
     
     if stocks_df.empty:
         st.warning("暂无股票数据")
