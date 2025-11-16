@@ -454,14 +454,27 @@ def show_realtime_display():
             # 格式化显示
             display_df = trades_df.copy()
             display_df['type'] = display_df['type'].map({'buy': '买入', 'sell': '卖出'})
-            display_df = display_df.rename(columns={
+            
+            # 构建列映射，包括股票名称
+            rename_dict = {
                 'date': '日期',
                 'type': '类型',
                 'symbol': '股票代码',
                 'quantity': '数量',
                 'price': '价格',
                 'total': '金额'
-            })
+            }
+            
+            # 如果有name字段，添加股票名称
+            if 'name' in display_df.columns:
+                rename_dict['name'] = '股票名称'
+            
+            display_df = display_df.rename(columns=rename_dict)
+            
+            # 重排列顺序，将股票名称放在股票代码后面
+            if '股票名称' in display_df.columns:
+                cols = ['日期', '类型', '股票代码', '股票名称', '数量', '价格', '金额']
+                display_df = display_df[[col for col in cols if col in display_df.columns]]
             
             # 格式化数值
             display_df['价格'] = display_df['价格'].apply(lambda x: f"¥{x:.2f}")
@@ -486,6 +499,7 @@ def show_realtime_display():
     with tab4:
         if state['log_messages']:
             st.markdown("### 最近日志")
+            st.caption("显示Agent的决策分析、理由和交易操作等信息")
             
             # 日志级别过滤
             log_level_filter = st.multiselect(
@@ -497,7 +511,8 @@ def show_realtime_display():
             # 显示日志
             log_container = st.container()
             with log_container:
-                for log in reversed(state['log_messages'][-100:]):
+                # 显示最近200条日志
+                for log in reversed(state['log_messages'][-200:]):
                     if log['level'] in log_level_filter:
                         icon = {
                             'info': 'ℹ️',
@@ -506,9 +521,16 @@ def show_realtime_display():
                             'error': '❌'
                         }.get(log['level'], 'ℹ️')
                         
-                        st.text(f"{log['timestamp']} {icon} {log['message']}")
+                        # 如果是决策分析或理由，显示完整内容
+                        message = log['message']
+                        if '分析:' in message or '理由:' in message:
+                            # 使用markdown显示，保留格式
+                            st.markdown(f"**{log['timestamp']} {icon}** {message}")
+                        else:
+                            st.text(f"{log['timestamp']} {icon} {message}")
         else:
             st.info("暂无日志")
+            st.caption("开始Agent运行后，这里将显示决策思考和交易信息")
     
     # 自动刷新
     if state['is_running'] and not state['is_paused']:

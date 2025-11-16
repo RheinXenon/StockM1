@@ -17,6 +17,7 @@ from Agents_Experience.agents.qwen_agent import QwenAgent
 from Agents_Experience.core.simulator import TradingSimulator
 from Agents_Experience.core.data_provider import MarketDataProvider
 from Agents_Experience.core.tools import TradingTools
+from Agents_Experience.utils.logger import DualLogger
 from src.stock_app.portfolio import Portfolio
 
 
@@ -57,6 +58,9 @@ class AgentRunner:
         
         # 运行线程
         self.run_thread = None
+        
+        # 日志系统
+        self.dual_logger = None
         
     def initialize(self) -> bool:
         """
@@ -99,6 +103,10 @@ class AgentRunner:
             if not self.trading_dates:
                 self.add_log("错误：未找到交易日数据", "error")
                 return False
+            
+            # 初始化双日志系统 - 使用真实模型名
+            model_name = self.config['model'].replace(':', '_').replace('/', '_')  # 清理特殊字符
+            self.dual_logger = DualLogger(f"agent_{model_name}")
             
             self.add_log(f"初始化成功，共 {len(self.trading_dates)} 个交易日", "success")
             return True
@@ -169,6 +177,11 @@ class AgentRunner:
         self.is_running = False
         self.is_paused = False
         self.add_log("Agent已终止", "info")
+        
+        # 关闭日志文件
+        if self.dual_logger:
+            self.dual_logger.close()
+            self.dual_logger = None
     
     def _run_loop(self):
         """运行循环（在独立线程中）"""
@@ -205,6 +218,11 @@ class AgentRunner:
                 self.is_running = False
                 self.add_log("模拟完成！", "success")
                 self.update_status('completed', True)
+                
+                # 关闭日志文件
+                if self.dual_logger:
+                    self.dual_logger.close()
+                    self.dual_logger = None
             
         except Exception as e:
             self.add_log(f"运行错误: {e}", "error")
@@ -223,7 +241,11 @@ class AgentRunner:
             
             # 处理决策
             if decision and decision.get('success'):
-                # 记录决策
+                # 记录决策到文件日志
+                if self.dual_logger:
+                    self.dual_logger.log_decision(current_date, decision)
+                
+                # 记录决策到内存（用于UI显示）
                 decision_info = {
                     'date': current_date,
                     'analysis': decision.get('analysis', ''),
@@ -232,18 +254,34 @@ class AgentRunner:
                 }
                 self.update_status('last_decision', decision_info)
                 
+                # 输出决策分析和理由到日志
+                analysis = decision.get('analysis', '')
+                reasoning = decision.get('reasoning', '')
+                
+                if analysis:
+                    self.add_log(f"分析: {analysis[:100]}...", "info")
+                if reasoning:
+                    self.add_log(f"理由: {reasoning[:100]}...", "info")
+                
                 # 执行交易
                 self._execute_actions(current_date, decision['actions'])
                 
                 self.add_log(f"决策: {len(decision['actions'])}个操作", "info")
             else:
+                # 即使决策失败也记录到日志
+                if self.dual_logger:
+                    self.dual_logger.log_decision(current_date, decision)
                 self.add_log(f"决策失败: {decision.get('reasoning', '未知错误')}", "warning")
             
             # 记录快照
             self._take_snapshot(current_date)
             
-            # 更新状态
+            # 记录每日资产情况到文件日志
             summary = self.portfolio.get_summary()
+            if self.dual_logger:
+                self.dual_logger.log_portfolio(current_date, summary, self.portfolio.positions)
+            
+            # 更新状态
             self.update_status('portfolio', {
                 'cash': summary['cash'],
                 'market_value': summary['market_value'],
@@ -341,6 +379,7 @@ class AgentRunner:
                 'date': date,
                 'type': 'buy',
                 'symbol': symbol,
+                'name': stock_name,
                 'quantity': quantity,
                 'price': price,
                 'commission': commission,
@@ -363,6 +402,7 @@ class AgentRunner:
                 return False
             
             price = price_info['close']
+            stock_name = position.name
             
             # 计算收入
             trade_amount = price * quantity
@@ -379,6 +419,7 @@ class AgentRunner:
                 'date': date,
                 'type': 'sell',
                 'symbol': symbol,
+                'name': stock_name,
                 'quantity': quantity,
                 'price': price,
                 'commission': commission,
