@@ -33,9 +33,13 @@ from visualization.agent_charts import (
     create_transactions_timeline, create_holdings_pie_chart,
     create_daily_return_distribution, create_portfolio_value_chart_with_index
 )
+from visualization.agent_config_manager import AgentConfigManager
+from visualization.agent_runner import AgentRunner
+from visualization.agent_simulator_page import show_agent_simulator_page
 from src.stock_app.data_downloader import DataDownloader
 from src.stock_app.database import Database
 import time
+import plotly.graph_objects as go
 
 # 常用指数定义（使用SH/SZ前缀区分市场，避免与股票代码冲突）
 COMMON_INDICES = {
@@ -131,7 +135,8 @@ def main():
     st.sidebar.title("导航菜单")
     page = st.sidebar.radio(
         "选择页面",
-        ["📊 股票列表", "📈 股票详细分析", "🔍 多股票对比", "📉 技术指标分析", "📊 统计分析", "💻 AI Agent交易结果", "⬇️ 下载股票数据"]
+        ["📊 股票列表", "📈 股票详细分析", "🔍 多股票对比", "📉 技术指标分析", "📊 统计分析", 
+         "💻 AI Agent模拟炒股", "💻 AI Agent交易结果", "⬇️ 下载股票数据"]
     )
     
     # 根据选择显示不同页面
@@ -145,6 +150,8 @@ def main():
         show_indicators_page()
     elif page == "📊 统计分析":
         show_statistics_page()
+    elif page == "💻 AI Agent模拟炒股":
+        show_agent_simulator_page()
     elif page == "💻 AI Agent交易结果":
         show_ai_agent_page()
     elif page == "⬇️ 下载股票数据":

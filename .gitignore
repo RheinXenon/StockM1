@@ -50,3 +50,6 @@ Thumbs.db
 Agents_Experience/.env
 *.env
 !.env.example
+
+# User configuration (敏感信息)
+Agents_Experience/user_setting.ini
