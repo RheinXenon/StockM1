@@ -33,7 +33,7 @@ def test_tools():
     tools_def = tools.get_tools_definition()
     print(f"   ✓ 共 {len(tools_def)} 个工具:")
     for tool in tools_def:
-        print(f"      - {tool['function']['name']}: {tool['function']['description'][:50]}...")
+        print(f"      - {tool['function']['name']}: {tool['function']['description']}")
     print()
     
     # 创建测试用的持仓
@@ -150,7 +150,7 @@ def test_tools():
     )
     result_data = json.loads(result)
     if "error" in result_data:
-        print(f"   ✓ 资金不足错误处理正确: {result_data['error'][:50]}...")
+        print(f"   ✓ 资金不足错误处理正确: {result_data['error']}")
     
     # 测试卖出未持有的股票
     result = tools.execute_tool(

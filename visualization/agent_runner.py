@@ -259,9 +259,9 @@ class AgentRunner:
                 reasoning = decision.get('reasoning', '')
                 
                 if analysis:
-                    self.add_log(f"分析: {analysis[:100]}...", "info")
+                    self.add_log(f"分析: {analysis}", "info")
                 if reasoning:
-                    self.add_log(f"理由: {reasoning[:100]}...", "info")
+                    self.add_log(f"理由: {reasoning}", "info")
                 
                 # 执行交易
                 self._execute_actions(current_date, decision['actions'])

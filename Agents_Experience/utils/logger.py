@@ -131,7 +131,7 @@ class DualLogger:
             for i, tool_call in enumerate(decision_info['tool_calls'], 1):
                 self.decision_file.write(f"  {i}. {tool_call['tool']}\n")
                 self.decision_file.write(f"     参数: {tool_call['arguments']}\n")
-                self.decision_file.write(f"     结果: {tool_call['result'][:200]}...\n\n")
+                self.decision_file.write(f"     结果: {tool_call['result']}\n\n")
         
         # 记录交易动作
         if 'actions' in decision_info and decision_info['actions']:
