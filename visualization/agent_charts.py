@@ -414,6 +414,152 @@ def create_holdings_pie_chart(holdings_str: str, date: str = "", title: str = "�
     return fig
 
 
+def create_stock_profit_pie_chart(stock_profits: Dict[str, float], title: str = "各股票收益贡献占比") -> go.Figure:
+    """
+    创建各股票收益贡献占比饼图
+    处理盈利和亏损的情况
+    
+    Args:
+        stock_profits: {股票代码: 收益金额} 字典
+        title: 图表标题
+    """
+    if not stock_profits:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="暂无收益数据",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=20, color="gray")
+        )
+        fig.update_layout(
+            title=title,
+            template='plotly_white',
+            height=400
+        )
+        return fig
+    
+    # 分离盈利和亏损股票
+    profit_stocks = {k: v for k, v in stock_profits.items() if v > 0}
+    loss_stocks = {k: abs(v) for k, v in stock_profits.items() if v < 0}
+    
+    # 判断总体是盈利还是亏损
+    total_profit = sum(stock_profits.values())
+    
+    if not profit_stocks and not loss_stocks:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="所有股票收益为0",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=20, color="gray")
+        )
+        fig.update_layout(
+            title=title,
+            template='plotly_white',
+            height=400
+        )
+        return fig
+    
+    # 根据总收益决定显示方式
+    if total_profit >= 0:
+        # 总体盈利：显示盈利股票的贡献比例
+        if profit_stocks:
+            symbols = list(profit_stocks.keys())
+            values = list(profit_stocks.values())
+            
+            # 创建颜色：盈利用绿色系
+            colors = ['#00C853', '#69F0AE', '#00E676', '#76FF03', '#B2FF59', '#CCFF90']
+            
+            # 添加亏损股票的影响（用负值表示）
+            if loss_stocks:
+                for symbol, loss in loss_stocks.items():
+                    symbols.append(f"{symbol}(亏)")
+                    values.append(loss)  # 用正值显示，但标记为亏损
+                colors.extend(['#FF1744', '#FF5252', '#FF6E40', '#FF9100'])
+            
+            hover_text = []
+            for i, symbol in enumerate(symbols):
+                if '(亏)' in symbol:
+                    original_profit = -loss_stocks[symbol.replace('(亏)', '')]
+                    hover_text.append(f'<b>{symbol}</b><br>亏损: ¥{original_profit:,.0f}<br>占比: %{{percent}}')
+                else:
+                    hover_text.append(f'<b>{symbol}</b><br>盈利: ¥{profit_stocks[symbol]:,.0f}<br>占比: %{{percent}}')
+            
+            fig = go.Figure(data=[go.Pie(
+                labels=symbols,
+                values=values,
+                hole=0.3,
+                marker=dict(
+                    colors=colors[:len(symbols)],
+                    line=dict(color='white', width=2)
+                ),
+                textinfo='label+percent',
+                textposition='auto',
+                hovertemplate='%{hovertext}<extra></extra>',
+                hovertext=hover_text
+            )])
+            
+            subtitle = f"总收益: ¥{total_profit:,.0f}"
+        else:
+            # 只有亏损股票
+            symbols = [f"{k}(亏)" for k in loss_stocks.keys()]
+            values = list(loss_stocks.values())
+            colors = ['#FF1744', '#FF5252', '#FF6E40', '#FF9100', '#FFAB40', '#FFD740']
+            
+            fig = go.Figure(data=[go.Pie(
+                labels=symbols,
+                values=values,
+                hole=0.3,
+                marker=dict(
+                    colors=colors[:len(symbols)],
+                    line=dict(color='white', width=2)
+                ),
+                textinfo='label+percent',
+                textposition='auto',
+                hovertemplate='<b>%{label}</b><br>亏损: ¥%{value:,.0f}<br>占比: %{percent}<extra></extra>'
+            )])
+            subtitle = f"总亏损: ¥{total_profit:,.0f}"
+    else:
+        # 总体亏损：显示亏损股票的占比
+        symbols = [f"{k}(亏)" for k in loss_stocks.keys()]
+        values = list(loss_stocks.values())
+        colors = ['#FF1744', '#FF5252', '#FF6E40', '#FF9100', '#FFAB40', '#FFD740']
+        
+        # 如果有盈利股票，也显示出来
+        if profit_stocks:
+            for symbol, profit in profit_stocks.items():
+                symbols.append(f"{symbol}(盈)")
+                values.append(profit)
+            colors.extend(['#00C853', '#69F0AE', '#00E676', '#76FF03'])
+        
+        fig = go.Figure(data=[go.Pie(
+            labels=symbols,
+            values=values,
+            hole=0.3,
+            marker=dict(
+                colors=colors[:len(symbols)],
+                line=dict(color='white', width=2)
+            ),
+            textinfo='label+percent',
+            textposition='auto',
+            hovertemplate='<b>%{label}</b><br>金额: ¥%{value:,.0f}<br>占比: %{percent}<extra></extra>'
+        )])
+        subtitle = f"总亏损: ¥{total_profit:,.0f}"
+    
+    fig.update_layout(
+        title=dict(
+            text=f"{title}<br><sub>{subtitle}</sub>",
+            x=0.5,
+            xanchor='center'
+        ),
+        template='plotly_white',
+        height=450,
+        showlegend=True
+    )
+    
+    return fig
+
+
 def create_daily_return_distribution(df: pd.DataFrame, title: str = "日收益率分布") -> go.Figure:
     """
     创建日收益率分布直方图
@@ -540,3 +686,147 @@ def create_portfolio_value_chart_with_index(df: pd.DataFrame,
     )
     
     return fig
+
+
+def create_stock_pool_comparison_chart(portfolio_df: pd.DataFrame,
+                                       stock_pool_data: Dict[str, pd.DataFrame],
+                                       stock_names: Optional[Dict[str, str]] = None,
+                                       title: str = "投资组合 vs 股票池对比") -> go.Figure:
+    """
+    创建投资组合与股票池中所有股票的对比图
+    
+    Args:
+        portfolio_df: 投资组合数据
+        stock_pool_data: {股票代码: 价格数据DataFrame} 字典
+        stock_names: {股票代码: 股票名称} 映射
+        title: 图表标题
+    """
+    fig = go.Figure()
+    
+    # 投资组合收益率曲线
+    if len(portfolio_df) > 0 and '总资产' in portfolio_df.columns:
+        initial_value = portfolio_df['总资产'].iloc[0]
+        portfolio_return = (portfolio_df['总资产'] / initial_value - 1) * 100
+        
+        fig.add_trace(go.Scatter(
+            x=portfolio_df['日期'],
+            y=portfolio_return,
+            mode='lines+markers',
+            name='AI投资组合',
+            line=dict(color='#FF1744', width=4),
+            marker=dict(size=5),
+        ))
+    
+    # 股票池中各股票的收益率曲线
+    stock_colors = ['#2196F3', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4', 
+                   '#FFC107', '#E91E63', '#009688', '#795548', '#607D8B']
+    
+    for i, (symbol, stock_df) in enumerate(stock_pool_data.items()):
+        if not stock_df.empty and 'close' in stock_df.columns:
+            # 归一化收益率
+            normalized = (stock_df['close'] / stock_df['close'].iloc[0] - 1) * 100
+            
+            # 获取股票名称
+            if stock_names and symbol in stock_names:
+                display_name = f"{symbol} {stock_names[symbol]}"
+            else:
+                display_name = symbol
+            
+            fig.add_trace(go.Scatter(
+                x=stock_df['date'],
+                y=normalized,
+                mode='lines',
+                name=display_name,
+                line=dict(
+                    color=stock_colors[i % len(stock_colors)],
+                    width=1.5,
+                    dash='dot'
+                ),
+                opacity=0.6
+            ))
+    
+    # 添加零轴参考线
+    fig.add_hline(
+        y=0,
+        line_dash="dash",
+        line_color="gray",
+        opacity=0.5
+    )
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title='日期',
+        yaxis_title='收益率 (%)',
+        template='plotly_white',
+        height=600,
+        hovermode='x unified',
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=1.01,
+            bgcolor='rgba(255, 255, 255, 0.8)'
+        )
+    )
+    
+    return fig
+
+
+def create_stock_performance_table(portfolio_df: pd.DataFrame,
+                                   stock_pool_data: Dict[str, pd.DataFrame],
+                                   stock_names: Optional[Dict[str, str]] = None) -> pd.DataFrame:
+    """
+    创建股票表现对比表格
+    
+    Args:
+        portfolio_df: 投资组合数据
+        stock_pool_data: {股票代码: 价格数据DataFrame} 字典
+        stock_names: {股票代码: 股票名称} 映射
+    
+    Returns:
+        对比数据表格
+    """
+    performance_data = []
+    
+    # 计算投资组合表现
+    if len(portfolio_df) > 0 and '总资产' in portfolio_df.columns:
+        initial_value = portfolio_df['总资产'].iloc[0]
+        final_value = portfolio_df['总资产'].iloc[-1]
+        total_return = (final_value / initial_value - 1) * 100
+        
+        performance_data.append({
+            '代码/名称': 'AI投资组合',
+            '起始值': f"¥{initial_value:,.0f}",
+            '最终值': f"¥{final_value:,.0f}",
+            '总收益率(%)': f"{total_return:.2f}%",
+            '收益金额': f"¥{final_value - initial_value:,.0f}"
+        })
+    
+    # 计算各股票表现
+    for symbol, stock_df in stock_pool_data.items():
+        if not stock_df.empty and 'close' in stock_df.columns:
+            initial_price = stock_df['close'].iloc[0]
+            final_price = stock_df['close'].iloc[-1]
+            total_return = (final_price / initial_price - 1) * 100
+            
+            # 假设同样投资100万
+            initial_investment = 1000000
+            final_value = initial_investment * (1 + total_return / 100)
+            profit = final_value - initial_investment
+            
+            # 获取股票名称
+            if stock_names and symbol in stock_names:
+                display_name = f"{symbol} {stock_names[symbol]}"
+            else:
+                display_name = symbol
+            
+            performance_data.append({
+                '代码/名称': display_name,
+                '起始值': f"¥{initial_investment:,.0f}",
+                '最终值': f"¥{final_value:,.0f}",
+                '总收益率(%)': f"{total_return:.2f}%",
+                '收益金额': f"¥{profit:,.0f}"
+            })
+    
+    return pd.DataFrame(performance_data)

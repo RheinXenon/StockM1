@@ -31,7 +31,9 @@ from visualization.agent_charts import (
     create_portfolio_value_chart, create_return_rate_chart,
     create_cash_position_chart, create_combined_overview_chart,
     create_transactions_timeline, create_holdings_pie_chart,
-    create_daily_return_distribution, create_portfolio_value_chart_with_index
+    create_daily_return_distribution, create_portfolio_value_chart_with_index,
+    create_stock_profit_pie_chart, create_stock_pool_comparison_chart,
+    create_stock_performance_table
 )
 from visualization.agent_config_manager import AgentConfigManager
 from visualization.agent_runner import AgentRunner
@@ -1267,7 +1269,7 @@ def show_ai_agent_page():
     # 图表展示选项
     chart_view = st.radio(
         "选择视图",
-        ["📈 综合概览", "💰 资产曲线", "📊 收益率变化", "💼 资产配置", "🔄 交易操作", "📋 持仓分布", "📉 收益率分布"],
+        ["📈 综合概览", "💰 资产曲线", "📊 收益率变化", "💼 资产配置", "🔄 交易操作", "📋 持仓分布", "💹 股票收益分析", "📊 股票池对比", "📉 收益率分布"],
         horizontal=True
     )
     
@@ -1425,6 +1427,124 @@ def show_ai_agent_page():
                     use_container_width=True,
                     hide_index=True
                 )
+    
+    elif chart_view == "💹 股票收益分析":
+        st.subheader("各股票收益贡献分析")
+        
+        # 计算各股票的总收益
+        stock_profits = agent_loader.get_stock_profits(selected_log['portfolio_file'])
+        
+        if stock_profits:
+            # 显示收益比例饼图
+            fig = create_stock_profit_pie_chart(stock_profits, "各股票总收益贡献占比")
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+            
+            # 显示详细收益表
+            st.subheader("📋 各股票收益明细")
+            
+            profit_data = []
+            for symbol, profit in sorted(stock_profits.items(), key=lambda x: x[1], reverse=True):
+                # 获取股票名称
+                stock_info = get_cached_stock_info(symbol)
+                stock_name = stock_info['name'] if stock_info else symbol
+                
+                profit_data.append({
+                    '股票代码': symbol,
+                    '股票名称': stock_name,
+                    '总收益': f"¥{profit:,.2f}",
+                    '收益状态': '盈利 ✅' if profit > 0 else ('亏损 ❌' if profit < 0 else '持平 ➖')
+                })
+            
+            profit_df = pd.DataFrame(profit_data)
+            st.dataframe(profit_df, use_container_width=True, hide_index=True)
+            
+            # 统计信息
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                profit_stocks = sum(1 for p in stock_profits.values() if p > 0)
+                st.metric("盈利股票数", profit_stocks)
+            with col2:
+                loss_stocks = sum(1 for p in stock_profits.values() if p < 0)
+                st.metric("亏损股票数", loss_stocks)
+            with col3:
+                total_profit = sum(stock_profits.values())
+                st.metric("总收益", f"¥{total_profit:,.0f}", 
+                         delta=f"{(total_profit/statistics.get('初始资金', 1))*100:.2f}%")
+            with col4:
+                max_profit_stock = max(stock_profits.items(), key=lambda x: x[1])
+                st.metric("最大贡献", f"{max_profit_stock[0]}", 
+                         delta=f"¥{max_profit_stock[1]:,.0f}")
+        else:
+            st.warning("暂无收益数据")
+    
+    elif chart_view == "📊 股票池对比":
+        st.subheader("投资组合 vs 股票池表现对比")
+        
+        st.info("💡 对比AI投资组合与股票池中各股票的收益表现（假设同样投资100万元）")
+        
+        # 读取股票池配置
+        from Agents_Experience.config import MVP_STOCK_POOL, STOCK_NAMES
+        
+        # 获取日期范围
+        start_date_str = portfolio_df['日期'].min().strftime('%Y-%m-%d')
+        end_date_str = portfolio_df['日期'].max().strftime('%Y-%m-%d')
+        
+        # 加载股票池中所有股票的数据
+        stock_pool_data = {}
+        with st.spinner(f'加载股票池中 {len(MVP_STOCK_POOL)} 只股票的数据...'):
+            for symbol in MVP_STOCK_POOL:
+                stock_df = get_cached_stock_data(symbol, start_date_str, end_date_str)
+                if not stock_df.empty:
+                    stock_pool_data[symbol] = stock_df
+        
+        if stock_pool_data:
+            # 创建对比图
+            fig = create_stock_pool_comparison_chart(
+                portfolio_df, 
+                stock_pool_data, 
+                STOCK_NAMES,
+                "AI投资组合 vs 股票池收益率对比"
+            )
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+            
+            # 创建表现对比表
+            st.subheader("📊 收益表现对比表")
+            performance_df = create_stock_performance_table(
+                portfolio_df,
+                stock_pool_data,
+                STOCK_NAMES
+            )
+            st.dataframe(performance_df, use_container_width=True, hide_index=True)
+            
+            # 统计信息
+            st.divider()
+            col1, col2, col3 = st.columns(3)
+            
+            # 计算AI组合的表现排名
+            if len(portfolio_df) > 0 and '总资产' in portfolio_df.columns:
+                ai_return = (portfolio_df['总资产'].iloc[-1] / portfolio_df['总资产'].iloc[0] - 1) * 100
+                
+                # 计算所有股票的收益率
+                all_returns = [ai_return]
+                for symbol, stock_df in stock_pool_data.items():
+                    stock_return = (stock_df['close'].iloc[-1] / stock_df['close'].iloc[0] - 1) * 100
+                    all_returns.append(stock_return)
+                
+                all_returns_sorted = sorted(all_returns, reverse=True)
+                ai_rank = all_returns_sorted.index(ai_return) + 1
+                
+                with col1:
+                    st.metric("AI组合排名", f"{ai_rank}/{len(all_returns)}")
+                with col2:
+                    better_than = len([r for r in all_returns[1:] if r < ai_return])
+                    st.metric("跑赢股票数", f"{better_than}/{len(stock_pool_data)}")
+                with col3:
+                    avg_stock_return = sum(all_returns[1:]) / len(all_returns[1:])
+                    outperformance = ai_return - avg_stock_return
+                    st.metric("超额收益", f"{outperformance:.2f}%",
+                             delta="vs 股票池平均")
+        else:
+            st.warning("无法加载股票池数据")
     
     elif chart_view == "📉 收益率分布":
         st.subheader("日收益率分布")

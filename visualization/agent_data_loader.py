@@ -150,9 +150,11 @@ class AgentDataLoader:
         
         transactions = []
         prev_holdings = {}
+        prev_cash = 0
         
         for idx, row in df.iterrows():
             date = row['日期']
+            current_cash = row.get('现金', 0)
             current_holdings = {}
             
             # 解析当前持仓
@@ -189,27 +191,35 @@ class AgentDataLoader:
                 # 查找减少持仓（卖出）
                 for symbol, prev_holding in prev_holdings.items():
                     if symbol not in current_holdings:
+                        # 完全卖出：使用前一天的持仓价格作为卖出价格估算
+                        quantity = prev_holding['shares']
+                        sell_price = prev_holding['price']
+                        
                         transactions.append({
                             '日期': date,
                             '操作': '卖出',
                             '股票代码': symbol,
-                            '数量': prev_holding['shares'],
-                            '价格': row.get('现金', 0),  # 实际价格需要从decision log中获取
-                            '金额': 0  # 需要从现金变化中计算
+                            '数量': quantity,
+                            '价格': sell_price,
+                            '金额': quantity * sell_price
                         })
                     elif current_holdings[symbol]['shares'] < prev_holding['shares']:
-                        # 减仓
+                        # 减仓：使用当前价格作为卖出价格估算
                         diff_shares = prev_holding['shares'] - current_holdings[symbol]['shares']
+                        # 使用前后价格的平均值
+                        sell_price = (prev_holding['price'] + current_holdings[symbol]['price']) / 2
+                        
                         transactions.append({
                             '日期': date,
                             '操作': '减仓',
                             '股票代码': symbol,
                             '数量': diff_shares,
-                            '价格': current_holdings[symbol]['price'],
-                            '金额': diff_shares * current_holdings[symbol]['price']
+                            '价格': sell_price,
+                            '金额': diff_shares * sell_price
                         })
             
             prev_holdings = current_holdings
+            prev_cash = current_cash
         
         return pd.DataFrame(transactions)
     
@@ -267,6 +277,93 @@ class AgentDataLoader:
         if match:
             return match.group(1).strip()
         return ""
+    
+    def get_stock_profits(self, portfolio_file: str) -> Dict[str, float]:
+        """
+        计算每只股票的总收益（考虑已卖出和当前持仓）
+        
+        Args:
+            portfolio_file: portfolio CSV文件路径
+            
+        Returns:
+            {股票代码: 总收益金额} 字典
+        """
+        df = self.load_portfolio_data(portfolio_file)
+        transactions_df = self.load_daily_transactions(portfolio_file)
+        
+        if df.empty or transactions_df.empty:
+            return {}
+        
+        # 使用FIFO方法跟踪每只股票的成本和收益
+        stock_data = {}  # {symbol: {'total_buy_cost': float, 'total_sell_revenue': float, 'current_holding': {...}}}
+        
+        # 分析所有交易记录
+        for _, trans in transactions_df.iterrows():
+            symbol = trans['股票代码']
+            operation = trans['操作']
+            quantity = trans['数量']
+            price = trans['价格']
+            
+            if symbol not in stock_data:
+                stock_data[symbol] = {
+                    'total_buy_cost': 0,
+                    'total_sell_revenue': 0,
+                    'shares_held': 0,
+                    'avg_cost_price': 0,
+                    'total_cost_of_held': 0
+                }
+            
+            data = stock_data[symbol]
+            
+            if operation in ['买入', '加仓']:
+                # 买入：记录成本
+                buy_cost = quantity * price
+                data['total_buy_cost'] += buy_cost
+                
+                # 更新持仓成本
+                total_cost = data['total_cost_of_held'] + buy_cost
+                data['shares_held'] += quantity
+                data['total_cost_of_held'] = total_cost
+                data['avg_cost_price'] = total_cost / data['shares_held'] if data['shares_held'] > 0 else 0
+                
+            elif operation in ['卖出', '减仓']:
+                # 卖出：记录收入
+                sell_revenue = quantity * price
+                data['total_sell_revenue'] += sell_revenue
+                
+                # 更新持仓成本（按平均成本减少）
+                if data['shares_held'] >= quantity:
+                    cost_of_sold = quantity * data['avg_cost_price']
+                    data['shares_held'] -= quantity
+                    data['total_cost_of_held'] -= cost_of_sold
+                    if data['shares_held'] == 0:
+                        data['total_cost_of_held'] = 0
+                        data['avg_cost_price'] = 0
+        
+        # 计算每只股票的总收益
+        stock_profits = {}
+        
+        # 获取最后一天的持仓信息（用于计算未实现收益）
+        last_holdings_str = df['持仓详情'].iloc[-1]
+        last_holdings = self.parse_holdings_detail(last_holdings_str)
+        last_holdings_dict = {h['symbol']: h for h in last_holdings}
+        
+        for symbol, data in stock_data.items():
+            # 已实现收益 = 卖出总收入 - （总买入成本 - 当前持仓成本）
+            realized_profit = data['total_sell_revenue'] - (data['total_buy_cost'] - data['total_cost_of_held'])
+            
+            # 未实现收益 = 当前市值 - 当前持仓成本
+            unrealized_profit = 0
+            if symbol in last_holdings_dict and data['shares_held'] > 0:
+                current_price = last_holdings_dict[symbol]['price']
+                current_market_value = data['shares_held'] * current_price
+                unrealized_profit = current_market_value - data['total_cost_of_held']
+            
+            # 总收益
+            total_profit = realized_profit + unrealized_profit
+            stock_profits[symbol] = total_profit
+        
+        return stock_profits
     
     def get_portfolio_statistics(self, portfolio_file: str) -> Dict:
         """
