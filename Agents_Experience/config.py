@@ -63,6 +63,9 @@ MAX_DECISIONS_PER_DAY = 1
 TEMPERATURE = 1.0  # 温度参数
 MAX_TOKENS = 2000  # 最大输出token数
 
+# 对话轮数限制（Agent调用工具和最终决策的最大轮数）
+MAX_CONVERSATION_ITERATIONS = 30  # 默认30轮，可根据需要调整
+
 # 历史数据窗口（Agent可以看到的历史天数）
 HISTORY_WINDOW_DAYS = 60
 

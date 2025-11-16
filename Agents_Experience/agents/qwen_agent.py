@@ -138,13 +138,15 @@ class QwenAgent(BaseAgent):
         tools_def = tools.get_tools_definition()
         
         # 开始对话循环（支持多轮工具调用）
-        max_iterations = 10  # 最多10轮对话
+        from Agents_Experience import config
+        max_iterations = config.MAX_CONVERSATION_ITERATIONS  # 从配置读取最大对话轮数
         iteration = 0
         final_decision = None
         tool_call_results = []
         
         while iteration < max_iterations:
             iteration += 1
+            print(f"  [对话轮次 {iteration}/{max_iterations}] 调用API...")
             
             # 调用API
             response = self._call_api(messages, tools_def)
@@ -174,6 +176,8 @@ class QwenAgent(BaseAgent):
             
             # 检查是否有工具调用
             if message.get("tool_calls"):
+                tool_count = len(message["tool_calls"])
+                print(f"  [工具调用] 本轮调用 {tool_count} 个工具")
                 # 处理工具调用
                 for tool_call in message["tool_calls"]:
                     function = tool_call["function"]
@@ -211,6 +215,7 @@ class QwenAgent(BaseAgent):
                 continue
             
             # 如果没有工具调用，说明Agent已经完成决策
+            print(f"  [决策完成] 在第 {iteration} 轮完成决策，共调用 {len(tool_call_results)} 个工具")
             final_response = message.get("content", "")
             
             # 解析决策
@@ -224,9 +229,10 @@ class QwenAgent(BaseAgent):
         
         # 如果达到最大迭代次数仍未完成
         if not final_decision:
+            print(f"  ⚠️ 达到最大对话轮数限制（{max_iterations}轮），共调用了 {len(tool_call_results)} 个工具")
             final_decision = {
                 'actions': [],
-                'reasoning': '达到最大对话轮数',
+                'reasoning': f'达到最大对话轮数（{max_iterations}轮，调用了{len(tool_call_results)}个工具）',
                 'analysis': '',
                 'success': False
             }
